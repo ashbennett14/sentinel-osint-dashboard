@@ -21,6 +21,13 @@ def test_upload_uses_standard_post_endpoint(monkeypatch, tmp_path: Path):
 
     assert post.call_args.args[0].endswith("/storage/v1/object/audio-briefs/episode.m4a")
     assert post.call_args.kwargs["headers"]["x-upsert"] == "true"
+    assert "Authorization" in post.call_args.kwargs["headers"]
+
+
+def test_new_secret_key_is_not_sent_as_a_bearer_token(monkeypatch):
+    monkeypatch.setattr(storage.settings, "SUPABASE_SERVICE_ROLE_KEY", "sb_secret_example")
+
+    assert storage._service_headers() == {"apikey": "sb_secret_example"}
 
 
 def test_upload_error_includes_supabase_response(monkeypatch, tmp_path: Path):

@@ -21,12 +21,21 @@ def _object_url(key: str, public: bool = False) -> str:
     return f"{settings.SUPABASE_URL}/storage/v1/{prefix}/{bucket}/{object_key}"
 
 
+def _service_headers() -> dict[str, str]:
+    key = settings.SUPABASE_SERVICE_ROLE_KEY
+    headers = {"apikey": key}
+    # Legacy service_role keys are JWTs and may be used as bearer tokens. New
+    # sb_secret keys are opaque and must only be supplied via `apikey`.
+    if not key.startswith("sb_secret_"):
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
 def upload_audio(path: Path, key: str) -> None:
     if not cloud_storage_enabled():
         return
     headers = {
-        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+        **_service_headers(),
         "Content-Type": "audio/mp4",
         "x-upsert": "true",
         "Cache-Control": "3600",
@@ -46,10 +55,7 @@ def upload_audio(path: Path, key: str) -> None:
 def delete_audio(key: str) -> None:
     if not cloud_storage_enabled():
         return
-    headers = {
-        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-    }
+    headers = _service_headers()
     response = requests.delete(
         f"{settings.SUPABASE_URL}/storage/v1/object/{quote(settings.SUPABASE_AUDIO_BUCKET, safe='')}",
         headers={**headers, "Content-Type": "application/json"},
