@@ -215,6 +215,14 @@ async function refreshSynopsis() {
 let currentBriefContent = "";
 let currentAudioEpisode = null;
 
+function withoutClassification(content) {
+  return (content || "")
+    .replace(/^\*\*Classification:\*\*[^\n]*(?:\n|$)/gim, "")
+    .replace(/^Classification:[^\n]*(?:\n|$)/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 async function refreshBrief(briefId) {
   const el = document.getElementById("briefContent");
   const metaEl = document.getElementById("briefMeta");
@@ -225,11 +233,11 @@ async function refreshBrief(briefId) {
       ? `/api/briefs/${briefId}`
       : `/api/brief/latest?ao=${state.ao}`;
     const data = await fetchJson(path);
-    currentBriefContent = data.content;
-    const rendered = marked.parse(data.content);
+    currentBriefContent = withoutClassification(data.content);
+    const rendered = marked.parse(currentBriefContent);
     el.innerHTML = window.DOMPurify
       ? DOMPurify.sanitize(rendered, { USE_PROFILES: { html: true } })
-      : escapeHtml(data.content);
+      : escapeHtml(currentBriefContent);
     metaEl.textContent = `${data.source_article_count} sources · generated ${timeAgo(data.generated_at)}`;
     if (data.fact_check_notes) {
       factText.textContent = data.fact_check_notes;
@@ -601,6 +609,9 @@ function wireControls() {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".ao-tab").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
+      document.querySelectorAll(".ao-tab").forEach((b) => b.removeAttribute("aria-current"));
+      btn.setAttribute("aria-current", "page");
+      btn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
       state.ao = btn.dataset.ao;
       document.getElementById("briefTitle").textContent = AO_META[state.ao].briefTitle;
       document.getElementById("briefHistory").value = "latest";
@@ -624,7 +635,6 @@ function wireControls() {
     });
   });
 
-  document.getElementById("refreshBtn").addEventListener("click", refreshAll);
   const collectBtn = document.getElementById("collectBtn");
   if (!READ_ONLY) collectBtn.addEventListener("click", () =>
       triggerJob("/api/trigger/ingest", collectBtn, "Collecting…", "Collection started")
@@ -679,6 +689,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   initMap();
   wireControls();
+  document.querySelector(".ao-tab.active")?.setAttribute("aria-current", "page");
   updateAoHeader();
   refreshAll();
   setInterval(refreshAll, 60000); // poll every minute

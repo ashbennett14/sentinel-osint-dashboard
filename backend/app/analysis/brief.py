@@ -202,7 +202,6 @@ Analytical focus: {config['focus']}
 Use this exact markdown structure:
 
 # {config['title']}
-**Classification:** UNCLASSIFIED // OPEN SOURCE ONLY
 **Period covered:** {period_start.strftime('%Y-%m-%d %H:%MZ')} to {period_end.strftime('%Y-%m-%d %H:%MZ')}
 
 ## 1. EXECUTIVE SUMMARY
@@ -399,7 +398,6 @@ def _build_fallback_content(
     location_text = _human_list(locations) if locations else config["area"]
 
     return f"""# {config['title']}
-**Classification:** UNCLASSIFIED // OPEN SOURCE ONLY
 **Period covered:** {period_start.strftime('%Y-%m-%d %H:%MZ')} to {period_end.strftime('%Y-%m-%d %H:%MZ')}
 
 ## 1. EXECUTIVE SUMMARY

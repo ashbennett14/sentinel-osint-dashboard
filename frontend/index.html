@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="static/css/dashboard.css?v=20260809-2">
+<link rel="stylesheet" href="static/css/dashboard.css?v=20260809-3">
 <style media="print">
   body * { visibility: hidden; }
   #briefContent, #briefContent *, #printLogo, #printLogo * { visibility: visible; }
@@ -32,18 +32,22 @@
 
   <div class="ao-tabs" id="aoTabs">
     <button class="ao-tab active" data-ao="AO_HIGH_NORTH">
+      <span class="ao-current">Current AO</span>
       <span class="ao-tab-label">AO&nbsp;HIGH NORTH</span>
       <span class="ao-tab-sub">High North / Finland / Baltics</span>
     </button>
     <button class="ao-tab" data-ao="AO_EUROPE">
+      <span class="ao-current">Current AO</span>
       <span class="ao-tab-label">AO&nbsp;UKRAINE &amp; EASTERN EUROPE</span>
       <span class="ao-tab-sub">Ukraine / Eastern Europe</span>
     </button>
     <button class="ao-tab" data-ao="AO_BALKANS">
+      <span class="ao-current">Current AO</span>
       <span class="ao-tab-label">AO&nbsp;BALKANS</span>
       <span class="ao-tab-sub">Western Balkans / Greece / Bulgaria</span>
     </button>
     <button class="ao-tab" data-ao="AO_LEVANT">
+      <span class="ao-current">Current AO</span>
       <span class="ao-tab-label">AO&nbsp;LEVANT</span>
       <span class="ao-tab-sub">Middle East · Lebanon / Jordan</span>
     </button>
@@ -57,11 +61,11 @@
     <button id="collectBtn" class="btn-ghost btn-primary">Collect</button>
     <button id="analysisBtn" class="btn-ghost">Analyse</button>
     <button id="notifyBtn" class="btn-ghost">Alerts off</button>
-    <button id="refreshBtn" class="btn-icon" aria-label="Reload dashboard" title="Reload dashboard">↻</button>
   </div>
 </header>
 
 <section class="mission-bar" aria-labelledby="aoTitle">
+  <img class="mission-emblem" src="static/img/sentinel-icon-watermark.png" alt="" aria-hidden="true">
   <div class="mission-copy">
     <h1 id="aoTitle">High North Watch</h1>
     <p id="aoDescription">High North, Finland and the Baltic states · Hybrid, infrastructure and regional security activity</p>
@@ -211,6 +215,7 @@
     </div>
     <div class="audio-body">
       <div class="audio-player-wrap">
+        <img class="audio-brand-mark" src="static/img/sentinel-icon-watermark.png" alt="" aria-hidden="true">
         <div class="audio-now-playing">
           <span class="audio-kicker">SENTINEL MORNING UPDATE</span>
           <strong id="audioEpisodeTitle">Awaiting first episode</strong>
@@ -249,6 +254,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-<script src="static/js/app.js?v=20260809-5"></script>
+<script src="static/js/app.js?v=20260809-6"></script>
 </body>
 </html>
