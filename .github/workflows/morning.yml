@@ -10,6 +10,10 @@ on:
         description: Replace today's episode after successful generation
         type: boolean
         default: false
+      audio_only:
+        description: Regenerate audio without rebuilding analyst briefs
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,5 +52,7 @@ jobs:
           test -f "$KOKORO_VOICES_PATH" || curl -fL --retry 3 -o "$KOKORO_VOICES_PATH" https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.bin
       - if: github.event_name == 'schedule'
         run: python scripts/cloud_job.py morning
-      - if: github.event_name == 'workflow_dispatch'
+      - if: github.event_name == 'workflow_dispatch' && inputs.audio_only != true
         run: python scripts/cloud_job.py morning --force
+      - if: github.event_name == 'workflow_dispatch' && inputs.audio_only == true
+        run: python scripts/cloud_job.py audio --force
