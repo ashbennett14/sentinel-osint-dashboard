@@ -49,4 +49,4 @@ def test_fallback_confidence_explains_source_mix_and_location_gaps():
 
     assert "Overall confidence" in assessment
     assert "official: 1" in assessment
-    assert "1 items lack" in assessment
+    assert "One item lacks" in assessment

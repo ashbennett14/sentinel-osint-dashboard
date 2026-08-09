@@ -243,10 +243,11 @@ def _trend_assessment(articles: list[Article]) -> str:
     category_text = ", ".join(f"{name} ({count})" for name, count in categories.most_common(4))
     country_text = ", ".join(f"{name} ({count})" for name, count in countries.most_common(4))
     high = sum(1 for a in articles if (a.severity or 0) >= 4)
+    severity_verb = "carries" if high == 1 else "carry"
     return (
         f"Across the 48-hour event set, the leading themes are {category_text or 'not sufficiently established'}. "
         f"Geographically attributable activity is concentrated in {country_text or 'no consistently confirmed location'}, "
-        f"and {high} of {len(articles)} developments carry a high or critical severity marker. "
+        f"and {high} of {len(articles)} developments {severity_verb} a high or critical severity marker. "
         "These counts describe the available reporting picture and should not be treated as a direct measure of underlying operational intensity."
     )
 
@@ -267,9 +268,12 @@ def _confidence_assessment(articles: list[Article]) -> str:
     mix = ", ".join(
         f"{tier.replace('_', ' ')}: {count}" for tier, count in reliability.most_common()
     ) or "no qualifying items"
+    location_gap = (
+        "One item lacks" if missing_location == 1 else f"{missing_location} items lack"
+    )
     return (
         f"Overall confidence is **{level}**. The 48-hour set contains {len(articles)} distinct developments, with a source mix of {mix}. "
-        f"{missing_location} items lack a confirmed country or operational location. Key gaps concern independent corroboration of single-source claims, "
+        f"{location_gap} a confirmed country or operational location. Key gaps concern independent corroboration of single-source claims, "
         "precise attribution, battle-damage or consequence assessment, and evidence that reported incidents form a sustained pattern rather than isolated events."
     )
 

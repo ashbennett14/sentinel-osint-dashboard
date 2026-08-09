@@ -226,9 +226,21 @@ def _fallback_window_assessment(articles: list[Article], window: str, days: floa
     top_categories = _join_ranked(categories)
     top_countries = _join_ranked(countries)
     primary_theme = categories.most_common(1)[0][0]
+    if high_severity == 0:
+        severity_clause = "No development carries a high or critical severity marker"
+    elif high_severity == 1:
+        severity_clause = "One development carries a high or critical severity marker"
+    else:
+        severity_clause = f"{high_severity} developments carry a high or critical severity marker"
+    if reliable == 0:
+        reliability_clause = "none is supported by official or established-media reporting"
+    elif reliable == 1:
+        reliability_clause = "one is supported by official or established-media reporting"
+    else:
+        reliability_clause = f"{reliable} are supported by official or established-media reporting"
     strategic = (
         f"The {window} picture contains {count} distinct significant developments, led by {top_categories}. "
-        f"{high_severity} developments carry a high or critical severity marker, while {reliable} are supported by official or established-media reporting. "
+        f"{severity_clause}, while {reliability_clause}. "
         f"Activity was {tempo}. The aggregate picture therefore keeps {primary_theme} as the principal reported driver of risk, "
         "but reporting volume alone is insufficient to establish a broader change in intent or strategic trajectory."
     )
