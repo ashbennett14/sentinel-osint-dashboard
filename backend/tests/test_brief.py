@@ -1,6 +1,8 @@
 import pytest
 
-from app.analysis.brief import _validate_brief, REQUIRED_SECTIONS
+from types import SimpleNamespace
+
+from app.analysis.brief import _confidence_assessment, _validate_brief, REQUIRED_SECTIONS
 
 
 def _complete_brief(ao="AO_HIGH_NORTH"):
@@ -34,3 +36,17 @@ def test_validate_brief_rejects_untranslated_cyrillic():
     content = _complete_brief() + "\nРакетна небезпека"
     with pytest.raises(ValueError, match="untranslated"):
         _validate_brief(content, "AO_HIGH_NORTH")
+
+
+def test_fallback_confidence_explains_source_mix_and_location_gaps():
+    articles = [
+        SimpleNamespace(source=SimpleNamespace(reliability="official"), country="Finland"),
+        SimpleNamespace(source=SimpleNamespace(reliability="established_media"), country=None),
+        SimpleNamespace(source=SimpleNamespace(reliability="unverified"), country="Estonia"),
+    ]
+
+    assessment = _confidence_assessment(articles)
+
+    assert "Overall confidence" in assessment
+    assert "official: 1" in assessment
+    assert "1 items lack" in assessment
