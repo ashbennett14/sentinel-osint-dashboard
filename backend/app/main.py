@@ -62,7 +62,14 @@ async def response_headers(request: Request, call_next):
         "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdnjs.cloudflare.com; connect-src 'self' https:; media-src 'self' https: blob:; frame-ancestors 'none'",
     )
     if request.method in ("GET", "HEAD") and request.url.path.startswith("/api/"):
-        response.headers.setdefault("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600")
+        if request.url.path.startswith("/api/audio-brief") or request.url.path == "/api/health":
+            # Today's episode is atomically replaced under the same database
+            # id. Never cache metadata or the redirect to its revisioned file.
+            response.headers["Cache-Control"] = "no-store"
+        else:
+            response.headers.setdefault(
+                "Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600"
+            )
     return response
 
 
@@ -281,7 +288,7 @@ def get_audio_brief_file(
             if download:
                 separator = "&" if "?" in cloud_url else "?"
                 cloud_url = f"{cloud_url}{separator}download=sentinel-morning-{episode.episode_date}.m4a"
-            return RedirectResponse(cloud_url, status_code=307, headers={"Cache-Control": "public, max-age=300"})
+            return RedirectResponse(cloud_url, status_code=307, headers={"Cache-Control": "no-store"})
     path = audio_path_for(episode) if episode and episode.status == "ready" else None
     if not path:
         raise HTTPException(404, "Audio file not found")
