@@ -63,6 +63,10 @@ def main() -> int:
 
     target = create_engine(normalise_url(args.database_url), pool_pre_ping=True)
     Base.metadata.create_all(target)
+    with target.begin() as connection:
+        connection.execute(text("ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_url_key"))
+        connection.execute(text("ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_source_id_fkey"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_articles_url_hash ON articles(md5(url))"))
     with target.connect() as connection:
         occupied = sum(connection.execute(select(func.count()).select_from(Base.metadata.tables[name])).scalar_one() for name in TABLES)
     if occupied:
