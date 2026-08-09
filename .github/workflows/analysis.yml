@@ -1,0 +1,38 @@
+name: Four-AO analysis
+
+on:
+  schedule:
+    - cron: "20 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      product:
+        description: Product to generate
+        required: true
+        default: synopsis
+        type: choice
+        options: [synopsis, brief]
+
+permissions:
+  contents: read
+concurrency:
+  group: sentinel-analysis
+  cancel-in-progress: false
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      HOSTED_MODE: "true"
+      SCHEDULER_ENABLED: "false"
+      LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: backend/requirements.txt }
+      - run: pip install -r backend/requirements.txt
+      - if: github.event_name == 'schedule' || inputs.product == 'synopsis'
+        run: python scripts/cloud_job.py synopsis
+      - if: github.event_name == 'workflow_dispatch' && inputs.product == 'brief'
+        run: python scripts/cloud_job.py brief

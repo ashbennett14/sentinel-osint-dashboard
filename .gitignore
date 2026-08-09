@@ -1,0 +1,40 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+
+# Databases, dumps and backups
+*.db
+*.db-*
+*.sqlite*
+*.dump
+*.bak
+backups/
+
+# Generated media and runtime state
+backend/generated/
+logs/
+public/
+*.log
+*.pid
+
+# Python / tools
+venv/
+backend/venv/
+backend/tts-venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# Platform and IDE
+.DS_Store
+.vercel/
+.idea/
+.vscode/
+node_modules/

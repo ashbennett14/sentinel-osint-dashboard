@@ -1,0 +1,42 @@
+name: Retention and recovery export
+
+on:
+  schedule:
+    - cron: "35 2 * * *"
+    - cron: "5 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: sentinel-maintenance
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      HOSTED_MODE: "true"
+      SCHEDULER_ENABLED: "false"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: backend/requirements.txt }
+      - run: pip install -r backend/requirements.txt
+      - run: python scripts/cloud_job.py cleanup
+
+  weekly-export:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '5 3 * * 0'
+    runs-on: ubuntu-latest
+    env:
+      DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+    steps:
+      - run: pg_dump "$DIRECT_DATABASE_URL" --format=custom --compress=9 --file=sentinel.dump
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-database-${{ github.run_id }}
+          path: sentinel.dump
+          retention-days: 7

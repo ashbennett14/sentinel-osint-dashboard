@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SENTINEL // OSINT Fusion Dashboard</title>
+<link rel="icon" type="image/png" sizes="32x32" href="static/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="static/img/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="static/img/apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0d10">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="static/css/dashboard.css?v=20260809-2">
+<style media="print">
+  body * { visibility: hidden; }
+  #briefContent, #briefContent *, #printLogo, #printLogo * { visibility: visible; }
+  #briefContent { position: absolute; left: 0; top: 90px; width: 100%; color: #000; background: #fff; }
+  #printLogo { display: block !important; position: absolute; top: 0; left: 0; }
+  #printLogo img { height: 60px; width: auto; }
+</style>
+</head>
+<body>
+
+<div id="statusBanner" class="status-banner hidden"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <img src="static/img/sentinel-logo-horizontal.png" alt="SENTINEL — Open-Source Fusion Watch" class="brand-logo">
+  </div>
+
+  <div class="ao-tabs" id="aoTabs">
+    <button class="ao-tab active" data-ao="AO_HIGH_NORTH">
+      <span class="ao-tab-label">AO&nbsp;HIGH NORTH</span>
+      <span class="ao-tab-sub">High North / Finland / Baltics</span>
+    </button>
+    <button class="ao-tab" data-ao="AO_EUROPE">
+      <span class="ao-tab-label">AO&nbsp;UKRAINE &amp; EASTERN EUROPE</span>
+      <span class="ao-tab-sub">Ukraine / Eastern Europe</span>
+    </button>
+    <button class="ao-tab" data-ao="AO_BALKANS">
+      <span class="ao-tab-label">AO&nbsp;BALKANS</span>
+      <span class="ao-tab-sub">Western Balkans / Greece / Bulgaria</span>
+    </button>
+    <button class="ao-tab" data-ao="AO_LEVANT">
+      <span class="ao-tab-label">AO&nbsp;LEVANT</span>
+      <span class="ao-tab-sub">Middle East · Lebanon / Jordan</span>
+    </button>
+  </div>
+
+  <div class="status-cluster">
+    <div class="status-item">
+      <span class="dot dot-live"></span>
+      <span id="systemState" class="mono">Connecting…</span>
+    </div>
+    <button id="collectBtn" class="btn-ghost btn-primary">Collect</button>
+    <button id="analysisBtn" class="btn-ghost">Analyse</button>
+    <button id="notifyBtn" class="btn-ghost">Alerts off</button>
+    <button id="refreshBtn" class="btn-icon" aria-label="Reload dashboard" title="Reload dashboard">↻</button>
+  </div>
+</header>
+
+<section class="mission-bar" aria-labelledby="aoTitle">
+  <div class="mission-copy">
+    <h1 id="aoTitle">High North Watch</h1>
+    <p id="aoDescription">High North, Finland and the Baltic states · Hybrid, infrastructure and regional security activity</p>
+  </div>
+  <div class="metric-grid" aria-label="Current intelligence summary">
+    <div class="metric-card">
+      <span class="metric-label">SIGACTS</span>
+      <strong id="kpiEvents">—</strong>
+      <span id="kpiWindow" class="metric-detail">last 24 hours</span>
+    </div>
+    <div class="metric-card metric-alert">
+      <span class="metric-label">HIGH SEVERITY</span>
+      <strong id="kpiCritical">—</strong>
+      <span class="metric-detail">severity 4–5</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">GEOLOCATED</span>
+      <strong id="kpiMapped">—</strong>
+      <span class="metric-detail">plotted events</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">COLLECTION</span>
+      <strong id="kpiSources">—</strong>
+      <span class="metric-detail">healthy sources</span>
+    </div>
+  </div>
+</section>
+
+<main class="layout">
+
+  <section class="panel map-panel">
+    <div class="panel-head">
+      <h2>SIGACT map</h2>
+      <div class="window-toggle" id="windowToggle">
+        <button class="window-btn active" data-window="24h">24H</button>
+        <button class="window-btn" data-window="48h">48H</button>
+        <button class="window-btn" data-window="7d">7D</button>
+        <button class="window-btn" data-window="30d">30D</button>
+      </div>
+    </div>
+    <div id="map"></div>
+    <img class="map-watermark" src="static/img/sentinel-icon-watermark.png" alt="">
+    <div class="legend">
+      <span class="legend-item"><i class="dot sev-5"></i>Critical</span>
+      <span class="legend-item"><i class="dot sev-4"></i>High</span>
+      <span class="legend-item"><i class="dot sev-3"></i>Medium</span>
+      <span class="legend-item"><i class="dot sev-2"></i>Low</span>
+    </div>
+  </section>
+
+  <section class="panel synopsis-panel">
+    <div class="panel-head">
+      <h2>Situation synopsis</h2>
+      <span id="synopsisMeta" class="meta mono"></span>
+    </div>
+    <div class="synopsis-body">
+      <div class="synopsis-tier">
+        <div class="tier-label">STRATEGIC</div>
+        <p id="synStrategic" class="tier-text">Awaiting first generation cycle…</p>
+      </div>
+      <div class="synopsis-tier">
+        <div class="tier-label">OPERATIONAL</div>
+        <p id="synOperational" class="tier-text">—</p>
+      </div>
+      <div class="synopsis-tier">
+        <div class="tier-label">TACTICAL</div>
+        <p id="synTactical" class="tier-text">—</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel feed-panel">
+    <div class="panel-head">
+      <h2>Latest reporting</h2>
+      <span id="feedCount" class="meta mono" aria-live="polite">0 events</span>
+    </div>
+    <div class="feed-filters">
+      <input id="feedSearch" type="text" placeholder="Search title/summary…" class="text-input">
+      <select id="feedCategoryFilter" class="text-input">
+        <option value="">All categories</option>
+        <option value="sabotage">Sabotage</option>
+        <option value="electronic_warfare">Electronic warfare</option>
+        <option value="airspace_incursion">Airspace incursion</option>
+        <option value="espionage">Espionage</option>
+        <option value="exercise">Exercise</option>
+        <option value="kinetic_strike">Kinetic strike</option>
+        <option value="bombing">Bombing</option>
+        <option value="civil_unrest">Civil unrest</option>
+        <option value="security_operation">Security operation</option>
+      </select>
+    </div>
+    <div id="feedList" class="feed-list"></div>
+  </section>
+
+  <section class="panel sources-panel collapsed" id="sourcesPanel">
+    <div class="panel-head">
+      <h2>Sources</h2>
+      <div class="source-head-actions">
+        <span id="sourceSummary" class="meta mono"></span>
+        <button id="addSourceBtn" class="btn-ghost">Add source</button>
+        <button id="sourcesToggleBtn" class="btn-ghost" aria-expanded="false">Show sources</button>
+      </div>
+    </div>
+    <div id="sourcePanelBody">
+      <div id="addSourceForm" class="add-source-form hidden">
+        <input id="srcName" class="text-input" placeholder="Source name" aria-label="Source name">
+        <select id="srcKind" class="text-input" aria-label="Source type">
+          <option value="rss">RSS</option>
+          <option value="social">Social RSS/Atom</option>
+          <option value="github">GitHub Atom</option>
+          <option value="telegram">Telegram</option>
+          <option value="twitter">Twitter/X</option>
+        </select>
+        <input id="srcUrl" class="text-input" placeholder="Feed URL, channel or handle" aria-label="Feed URL, channel or handle">
+        <select id="srcAo" class="text-input" aria-label="Area of observation">
+          <option value="AO_HIGH_NORTH">AO HIGH NORTH</option>
+          <option value="AO_EUROPE">AO UKRAINE &amp; EASTERN EUROPE</option>
+          <option value="AO_BALKANS">AO BALKANS</option>
+          <option value="AO_LEVANT">AO LEVANT</option>
+          <option value="GLOBAL">GLOBAL</option>
+        </select>
+        <select id="srcReliability" class="text-input" aria-label="Reliability tier">
+          <option value="official">Official</option>
+          <option value="established_media">Established media</option>
+          <option value="regional_specialist">Regional specialist</option>
+          <option value="unverified" selected>Unverified</option>
+        </select>
+        <button id="saveSourceBtn" class="btn-ghost btn-primary">Save source</button>
+      </div>
+      <div id="sourcesList" class="sources-list"></div>
+    </div>
+  </section>
+
+  <section class="panel audio-panel" aria-labelledby="audioBriefTitle">
+    <div class="panel-head audio-head">
+      <div>
+        <h2 id="audioBriefTitle">Morning audio briefing</h2>
+        <span id="audioBriefMeta" class="meta mono">Daily four-AO update · ready by 07:00</span>
+      </div>
+      <div class="audio-controls">
+        <select id="audioBriefHistory" class="text-input" aria-label="Audio briefing history">
+          <option value="latest">Latest episode</option>
+        </select>
+        <button id="generateAudioBtn" class="btn-ghost">Generate now</button>
+        <button id="downloadAudioBtn" class="btn-ghost" disabled>Download</button>
+      </div>
+    </div>
+    <div class="audio-body">
+      <div class="audio-player-wrap">
+        <div class="audio-now-playing">
+          <span class="audio-kicker">SENTINEL MORNING UPDATE</span>
+          <strong id="audioEpisodeTitle">Awaiting first episode</strong>
+          <span id="audioPeriod" class="meta">The daily episode covers all four Areas of Operation.</span>
+        </div>
+        <audio id="audioPlayer" controls preload="metadata" aria-label="Morning audio intelligence briefing"></audio>
+        <div id="audioChapters" class="audio-chapters" aria-label="Episode chapters"></div>
+      </div>
+      <details id="audioTranscriptDetails" class="audio-transcript">
+        <summary>Read transcript</summary>
+        <div id="audioTranscript" class="audio-transcript-copy">No transcript is available yet.</div>
+      </details>
+    </div>
+  </section>
+
+  <section class="panel brief-panel">
+    <div class="panel-head">
+      <h2 id="briefTitle">AO High North daily analyst brief</h2>
+      <div class="brief-controls">
+        <select id="briefHistory" class="text-input"><option value="latest">Latest</option></select>
+        <button id="downloadBriefBtn" class="btn-ghost">Download</button>
+        <button id="printBriefBtn" class="btn-ghost">Print / PDF</button>
+        <span id="briefMeta" class="meta mono"></span>
+      </div>
+    </div>
+    <div id="printLogo" class="print-only"><img src="static/img/sentinel-wordmark.png" alt="SENTINEL"></div>
+    <div id="briefContent" class="brief-content">Awaiting first brief generation cycle…</div>
+    <div id="factCheckBox" class="fact-check-box hidden">
+      <div class="tier-label">FACT-CHECK PASS (SECOND MODEL REVIEW)</div>
+      <p id="factCheckText" class="tier-text"></p>
+    </div>
+  </section>
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
+<script src="static/js/app.js?v=20260809-5"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "SENTINEL — Open-Source Fusion Watch",
+  "short_name": "SENTINEL",
+  "icons": [
+    { "src": "static/img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "static/img/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#0a0d10",
+  "background_color": "#0a0d10",
+  "display": "standalone"
+}
