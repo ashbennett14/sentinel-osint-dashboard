@@ -38,7 +38,7 @@ def test_validate_brief_rejects_untranslated_cyrillic():
         _validate_brief(content, "AO_HIGH_NORTH")
 
 
-def test_fallback_confidence_explains_source_mix_and_location_gaps():
+def test_fallback_confidence_explains_basis_without_source_arithmetic():
     articles = [
         SimpleNamespace(source=SimpleNamespace(reliability="official"), country="Finland"),
         SimpleNamespace(source=SimpleNamespace(reliability="established_media"), country=None),
@@ -48,5 +48,18 @@ def test_fallback_confidence_explains_source_mix_and_location_gaps():
     assessment = _confidence_assessment(articles)
 
     assert "Overall confidence" in assessment
-    assert "official: 1" in assessment
-    assert "One item lacks" in assessment
+    assert "supported by official and established reporting" in assessment
+    assert "lacks a precise operational location" in assessment
+    assert "official: 1" not in assessment
+
+
+def test_fallback_confidence_avoids_collection_dashboard_language():
+    articles = [
+        SimpleNamespace(source=SimpleNamespace(reliability="official"), country="Finland"),
+        SimpleNamespace(source=SimpleNamespace(reliability="regional_specialist"), country="Estonia"),
+    ]
+
+    assessment = _confidence_assessment(articles).lower()
+
+    for prohibited in ("source mix", "event set", "severity marker", "reporting volume"):
+        assert prohibited not in assessment

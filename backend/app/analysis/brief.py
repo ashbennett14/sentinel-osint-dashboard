@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Article, Brief, Synopsis
 from app.analysis.llm_client import complete
-from app.analysis.synopsis import _clean_english_text
+from app.analysis.synopsis import (
+    NEAR_TERM_INDICATORS,
+    _ao_relevance_score,
+    _article_description,
+    _clean_english_text,
+    _human_list,
+    _select_relevant_articles,
+    _summary_description,
+)
 from app.analysis.trends import category_trend_summary
 
 logger = logging.getLogger("sentinel.analysis.brief")
@@ -37,6 +45,26 @@ AO_CONFIG = {
     },
 }
 
+AO_BASELINE_ASSESSMENT = {
+    "AO_HIGH_NORTH": (
+        "The enduring risk is cumulative grey-zone pressure rather than a single decisive incident. "
+        "Navigation disruption, suspicious activity around infrastructure and hostile intelligence activity can impose operational costs without crossing a clear threshold for response. "
+        "The most important analytical test is whether separate incidents begin to show common timing, geography, targeting or attribution."
+    ),
+    "AO_EUROPE": (
+        "The wider campaign remains shaped by the interaction of strike capacity, air defence, force regeneration and external military support. "
+        "Tactical effects should therefore be judged not only by immediate casualties or damage, but by whether they alter freedom of manoeuvre, sustainment, civilian resilience or the ability to protect critical nodes over time."
+    ),
+    "AO_BALKANS": (
+        "The regional baseline remains one of contained but persistent political and inter-ethnic friction, with local incidents capable of acquiring wider significance through mobilisation, disinformation or intervention by external actors. "
+        "The principal warning threshold would be a shift from rhetoric or isolated public-order activity towards organised violence, institutional obstruction, security-force reinforcement or a change in the posture of international missions."
+    ),
+    "AO_LEVANT": (
+        "The regional environment remains vulnerable to rapid escalation because local action can trigger responses across several connected theatres. "
+        "The central analytical question is whether current activity remains bounded by established deterrence and crisis-management mechanisms, or begins to generate sustained retaliation, altered force posture or pressure on state institutions and essential infrastructure."
+    ),
+}
+
 SYSTEM_PROMPT = """You are a senior military intelligence analyst producing a daily \
 area brief for a fusion cell, drafted entirely from open-source reporting (OSINT). \
 Audience: watch officers and analysts who need a fast, decision-useful read at shift \
@@ -58,6 +86,15 @@ Weight claims using the supplied reliability tiers (official, established_media,
 regional_specialist, unverified). Duplicate reporting has already been collapsed. \
 Use the 14-day trend summary to identify supported patterns without overstating \
 small samples. Distinguish reported facts from your assessment.
+
+Write the intelligence, not the collection process. Do not lead with or enumerate \
+source counts, event counts, severity totals, reliability-tier totals or database \
+metadata. Do not use phrases such as "the event set contains", "reporting volume" \
+or "provider-independent brief". Reliability metadata is for internal weighting, \
+not the subject of the product. Lead with the operating picture, explain why each \
+development matters, make defensible judgements and write a clear forward outlook. \
+The finished product should read like a polished defence analyst's brief, not an \
+automated collection summary.
 
 Follow the exact markdown structure supplied by the user prompt. Keep the executive \
 summary to 3-5 sentences and the full product to 650-900 words. Paraphrase source \
@@ -110,7 +147,7 @@ EVENT_LABELS = {
 
 def _recent_articles(db: Session, ao: str, hours: int = 48, limit: int = 100):
     since = datetime.utcnow() - timedelta(hours=hours)
-    return (
+    candidates = (
         db.query(Article)
         .filter(
             Article.ao == ao,
@@ -118,9 +155,29 @@ def _recent_articles(db: Session, ao: str, hours: int = 48, limit: int = 100):
             Article.is_cluster_primary == True,  # noqa: E712
         )
         .order_by(Article.severity.desc(), Article.published_at.desc())
-        .limit(limit)
+        .limit(max(limit * 3, 200))
         .all()
     )
+    reliability_weight = {
+        "official": 4,
+        "established_media": 3,
+        "regional_specialist": 2,
+        "unverified": 1,
+    }
+    selected = _select_relevant_articles(candidates, limit=max(limit * 2, 150))
+    selected.sort(
+        key=lambda article: (
+            bool(article.is_sigact),
+            _ao_relevance_score(article),
+            reliability_weight.get(
+                article.source.reliability if article.source else "unverified", 0
+            ),
+            article.severity or 0,
+            article.published_at,
+        ),
+        reverse=True,
+    )
+    return selected[:limit]
 
 
 def _format_articles(articles) -> str:
@@ -194,10 +251,10 @@ def _english_development_title(article: Article) -> str:
     """Use an English title or a factual English descriptor for foreign text."""
     title = (article.title or "").strip()
     if title and not NON_LATIN_SCRIPT.search(title):
-        return title
+        return re.sub(r"\s+-\s+[A-Z][A-Za-z0-9 .&']{2,40}$", "", title).strip()
     event = EVENT_LABELS.get(article.category, "Security-related event")
     location = article.country or AO_CONFIG.get(article.ao, {}).get("area") or "the area"
-    return f"{event} reported in {location} (severity {article.severity})"
+    return f"{event} reported in {location}"
 
 
 IMPLICATIONS = {
@@ -217,38 +274,60 @@ IMPLICATIONS = {
 
 
 def _article_detail(article: Article) -> str:
-    title = _english_development_title(article)
-    summary = _clean_english_text(article.summary, 320)
-    if summary and summary.lower() not in title.lower() and title.lower() not in summary.lower():
-        return f"{title}. {summary}."
-    return f"{title}."
+    return _article_description(article)
 
 
 def _development_bullet(article: Article) -> str:
-    source_name = article.source.name if article.source else "an unattributed feed"
-    reliability = (article.source.reliability if article.source else "unverified").replace("_", " ")
-    location = article.country or "location not confirmed"
+    reliability = article.source.reliability if article.source else "unverified"
+    confidence = {
+        "official": "High confidence",
+        "established_media": "Moderate confidence",
+        "regional_specialist": "Moderate confidence",
+        "unverified": "Low confidence",
+    }.get(reliability, "Low confidence")
     implication = IMPLICATIONS.get(article.category, IMPLICATIONS["unclassified_reporting"])
-    summary = _clean_english_text(article.summary, 320)
-    reported_detail = summary or "The available item does not provide a further reliable English-language description."
-    return (
-        f"- **{_english_development_title(article)}** — {reported_detail} "
-        f"The item is associated with {location} and was carried by {source_name} ({reliability}). {implication}"
+    title = _english_development_title(article)
+    summary = _summary_description(article)
+    title_words = set(re.findall(r"[a-z0-9]+", title.lower()))
+    summary_words = set(re.findall(r"[a-z0-9]+", summary.lower()))
+    overlap = len(title_words & summary_words) / max(1, len(title_words))
+    reported_detail = (
+        summary.rstrip(".")
+        if summary and overlap < 0.72
+        else "The immediate operational effects remain unclear"
     )
+    return (
+        f"- **{title} ({confidence}):** "
+        f"{reported_detail}. {implication}"
+    )
+
+
+def _key_developments(articles: list[Article], limit: int = 5) -> list[str]:
+    developments = []
+    seen = set()
+    for article in articles:
+        title = _english_development_title(article)
+        fingerprint = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        developments.append(_development_bullet(article))
+        if len(developments) >= limit:
+            break
+    return developments
 
 
 def _trend_assessment(articles: list[Article]) -> str:
     categories = Counter((a.category or "security reporting").replace("_", " ") for a in articles)
-    countries = Counter(a.country for a in articles if a.country)
-    category_text = ", ".join(f"{name} ({count})" for name, count in categories.most_common(4))
-    country_text = ", ".join(f"{name} ({count})" for name, count in countries.most_common(4))
-    high = sum(1 for a in articles if (a.severity or 0) >= 4)
-    severity_verb = "carries" if high == 1 else "carry"
+    themes = [name for name, _ in categories.most_common(3)]
+    countries = [name for name, _ in Counter(a.country for a in articles if a.country).most_common(3)]
+    primary = themes[0] if themes else "security-related"
+    secondary = themes[1] if len(themes) > 1 else None
     return (
-        f"Across the 48-hour event set, the leading themes are {category_text or 'not sufficiently established'}. "
-        f"Geographically attributable activity is concentrated in {country_text or 'no consistently confirmed location'}, "
-        f"and {high} of {len(articles)} developments {severity_verb} a high or critical severity marker. "
-        "These counts describe the available reporting picture and should not be treated as a direct measure of underlying operational intensity."
+        f"The recent operating picture is principally characterised by {primary} activity"
+        + (f", alongside {secondary}" if secondary else "")
+        + f", with the clearest effects in {_human_list(countries)}. "
+        f"The recurrence of {primary} warrants continued attention, but the available evidence does not yet establish a coordinated campaign or an AO-wide change in posture."
     )
 
 
@@ -258,23 +337,25 @@ def _confidence_assessment(articles: list[Article]) -> str:
         for article in articles
     )
     supported = reliability["official"] + reliability["established_media"]
-    missing_location = sum(1 for article in articles if not article.country)
     if not articles:
         level = "Low"
-    elif supported >= max(3, len(articles) // 2):
+        support_text = "No new significant development is available to support a revised judgement."
+    elif reliability["official"] and supported >= max(2, len(articles) // 2):
+        level = "Moderate to high"
+        support_text = "The occurrence of the principal developments is supported by official and established reporting, although intent and attribution remain less certain."
+    elif supported >= max(2, len(articles) // 2):
         level = "Moderate"
+        support_text = "The principal developments are supported by established reporting, while several tactical details still require corroboration."
     else:
         level = "Low to moderate"
-    mix = ", ".join(
-        f"{tier.replace('_', ' ')}: {count}" for tier, count in reliability.most_common()
-    ) or "no qualifying items"
-    location_gap = (
-        "One item lacks" if missing_location == 1 else f"{missing_location} items lack"
+        support_text = "Several material details rely on regional or single-source reporting and should be treated cautiously pending corroboration."
+    location_text = (
+        "Some reporting lacks a precise operational location. "
+        if any(not article.country for article in articles) else ""
     )
     return (
-        f"Overall confidence is **{level}**. The 48-hour set contains {len(articles)} distinct developments, with a source mix of {mix}. "
-        f"{location_gap} a confirmed country or operational location. Key gaps concern independent corroboration of single-source claims, "
-        "precise attribution, battle-damage or consequence assessment, and evidence that reported incidents form a sustained pattern rather than isolated events."
+        f"Overall confidence is **{level}**. {support_text} {location_text}"
+        "The principal intelligence gaps concern attribution, intent, precise consequence assessment and whether apparently related incidents form a sustained pattern rather than isolated activity."
     )
 
 
@@ -304,7 +385,7 @@ def _build_fallback_content(
     strategic = synopsis.strategic if synopsis else "No generated synopsis is available for this reporting period."
     operational = synopsis.operational if synopsis else "The current event list is the available operating picture."
     tactical = synopsis.tactical if synopsis else "No additional tactical assessment is available."
-    developments = [_development_bullet(article) for article in articles[:5]]
+    developments = _key_developments(articles)
     if not developments:
         developments.append("- No qualifying reporting was collected in this period.")
 
@@ -315,14 +396,14 @@ def _build_fallback_content(
         if articles else "relevant security activity"
     )
     locations = [name for name, _ in Counter(a.country for a in articles if a.country).most_common(3)]
-    location_text = ", ".join(locations) if locations else config["area"]
+    location_text = _human_list(locations) if locations else config["area"]
 
     return f"""# {config['title']}
 **Classification:** UNCLASSIFIED // OPEN SOURCE ONLY
 **Period covered:** {period_start.strftime('%Y-%m-%d %H:%MZ')} to {period_end.strftime('%Y-%m-%d %H:%MZ')}
 
 ## 1. EXECUTIVE SUMMARY
-{_clip_words(strategic, 100)} The latest 48-hour set contains {len(articles)} distinct developments and is dominated by {dominant_category}. The priority judgement is that the reported activity requires continued attention in {location_text}, while the available evidence does not justify extrapolating beyond the events described below.
+{_clip_words(strategic, 120)} The priority judgement is that {dominant_category} activity requires continued attention in {location_text}. The available evidence supports a focused regional concern, but not a broader conclusion beyond the developments described below.
 
 ## 2. SITUATION OVERVIEW
 {_clip_words(operational, 140)}
@@ -335,17 +416,18 @@ def _build_fallback_content(
 ## 4. ASSESSMENT
 {_clip_words(tactical, 160)}
 
-The relationship between the individual developments remains partly unresolved. Repetition within one category may reflect a genuine operational pattern, heavier reporting attention, or both; a stronger judgement requires consistent geography, attribution and timing. The trailing 14-day event pattern is:
-{trend}
+{AO_BASELINE_ASSESSMENT[ao]}
+
+The relationship between the individual developments remains partly unresolved. The current pattern may reflect a genuine operational development, but a stronger judgement requires consistent geography, attribution and timing. In the absence of those indicators, the activity should be treated as localised friction rather than evidence of a new campaign.
 
 ## 5. OUTLOOK & INDICATORS
-- **Short term (0-72h):** The most plausible near-term course is continued {dominant_category} reporting around {location_text}. Watch for follow-on incidents, official posture changes, disruption to infrastructure or transport, and evidence of retaliation or geographic spread.
-- **Medium term (1-4 weeks):** A sustained pattern would require repeated, independently supported events with consistent actors, targets or locations. Without those indicators, the current set is better treated as a series of reported developments than proof of a new campaign or strategic shift.
-- **Long term (1-6 months):** The present 48-hour set is insufficient for a defensible long-range forecast. Structural change would be indicated by altered force posture, enduring policy measures, persistent mobilisation, new basing or access arrangements, or repeated pressure on the same critical systems.
-- **Indicators to watch:** Changes in event frequency and severity; movement beyond {location_text}; stronger official attribution; repeated targeting patterns; military or security-force reinforcement; emergency legal measures; and corroborated effects on civilian services or critical infrastructure.
+- **Short term (0-72h):** The most plausible near-term course is continued {dominant_category} activity around {location_text}. Watch for {NEAR_TERM_INDICATORS.get(dominant_category, NEAR_TERM_INDICATORS['security reporting'])}.
+- **Medium term (1-4 weeks):** A sustained pattern would require repeated, independently supported incidents involving consistent actors, targets or locations. Without those indicators, the activity is more likely to remain episodic than develop into a new campaign or strategic shift.
+- **Long term (1-6 months):** Current evidence does not support a specific long-range forecast. Structural change would be indicated by altered force posture, enduring policy measures, persistent mobilisation, new basing or access arrangements, or repeated pressure on the same critical systems.
+- **Indicators to watch:** Changes in operational tempo or effects; movement beyond {location_text}; stronger official attribution; repeated targeting patterns; military or security-force reinforcement; emergency legal measures; and confirmed disruption to civilian services or critical infrastructure.
 
 ## 6. COLLECTION GAPS & CONFIDENCE
-{confidence_assessment} This provider-independent brief uses only the latest validated {ao} synopsis and the current isolated source set. No reporting from another AO has been introduced."""
+{confidence_assessment}"""
 
 
 def generate_fallback_ao_brief(db: Session, ao: str) -> Brief:

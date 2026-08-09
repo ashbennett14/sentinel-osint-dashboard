@@ -74,4 +74,13 @@ def test_fallback_synopsis_is_substantive_and_event_specific():
     assert len(operational.split()) >= 60
     assert len(tactical.split()) >= 60
     assert "transport hub" in operational
-    assert "military exercise" in tactical.lower()
+    combined = " ".join((strategic, operational, tactical)).lower()
+    assert "military exercise" in combined
+    for prohibited in (
+        "event set contains",
+        "source mix",
+        "distinct developments",
+        "severity marker",
+        "reporting volume",
+    ):
+        assert prohibited not in combined
