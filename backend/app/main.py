@@ -62,9 +62,14 @@ async def response_headers(request: Request, call_next):
         "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://cdnjs.cloudflare.com; connect-src 'self' https:; media-src 'self' https: blob:; frame-ancestors 'none'",
     )
     if request.method in ("GET", "HEAD") and request.url.path.startswith("/api/"):
-        if request.url.path.startswith("/api/audio-brief") or request.url.path == "/api/health":
-            # Today's episode is atomically replaced under the same database
-            # id. Never cache metadata or the redirect to its revisioned file.
+        if (
+            request.url.path.startswith("/api/audio-brief")
+            or request.url.path.startswith("/api/synopsis")
+            or request.url.path.startswith("/api/brief")
+            or request.url.path == "/api/health"
+        ):
+            # Analysis products are regenerated behind stable API URLs. Never
+            # leave the dashboard showing a superseded product after a run.
             response.headers["Cache-Control"] = "no-store"
         else:
             response.headers.setdefault(
