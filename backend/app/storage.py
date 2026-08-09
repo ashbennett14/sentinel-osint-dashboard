@@ -32,8 +32,15 @@ def upload_audio(path: Path, key: str) -> None:
         "Cache-Control": "3600",
     }
     with path.open("rb") as audio:
-        response = requests.put(_object_url(key), headers=headers, data=audio, timeout=120)
-    response.raise_for_status()
+        # Supabase's standard object-upload endpoint accepts POST. PUT is used
+        # by the separate resumable-upload protocol and returns a generic 400
+        # when sent to this endpoint.
+        response = requests.post(_object_url(key), headers=headers, data=audio, timeout=120)
+    if not response.ok:
+        raise requests.HTTPError(
+            f"Supabase audio upload failed ({response.status_code}): {response.text[:500]}",
+            response=response,
+        )
 
 
 def delete_audio(key: str) -> None:
