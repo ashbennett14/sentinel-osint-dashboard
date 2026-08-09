@@ -18,6 +18,10 @@ def _normalise_database_url(value: str) -> str:
 
 DATABASE_URL = _normalise_database_url(settings.DATABASE_URL)
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+if settings.HOSTED_MODE and DATABASE_URL.startswith("postgresql+psycopg"):
+    # Supabase's transaction pooler cannot safely retain per-connection
+    # prepared statements across serverless requests or Actions workers.
+    connect_args["prepare_threshold"] = None
 engine_options = {"connect_args": connect_args, "pool_pre_ping": True}
 if settings.HOSTED_MODE and not DATABASE_URL.startswith("sqlite"):
     engine_options["poolclass"] = NullPool
