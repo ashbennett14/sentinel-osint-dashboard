@@ -30,6 +30,24 @@ def test_new_secret_key_is_not_sent_as_a_bearer_token(monkeypatch):
     assert storage._service_headers() == {"apikey": "sb_secret_example"}
 
 
+def test_s3_upload_uses_private_server_credentials(monkeypatch, tmp_path: Path):
+    audio = tmp_path / "episode.m4a"
+    audio.write_bytes(b"audio")
+    client = Mock()
+    monkeypatch.setattr(storage.settings, "SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setattr(storage.settings, "SUPABASE_S3_ENDPOINT", "https://example.storage.supabase.co/storage/v1/s3")
+    monkeypatch.setattr(storage.settings, "SUPABASE_S3_ACCESS_KEY_ID", "access")
+    monkeypatch.setattr(storage.settings, "SUPABASE_S3_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setattr(storage, "_s3_client", Mock(return_value=client))
+
+    storage.upload_audio(audio, "episode.m4a")
+
+    kwargs = client.put_object.call_args.kwargs
+    assert kwargs["Bucket"] == "audio-briefs"
+    assert kwargs["Key"] == "episode.m4a"
+    assert kwargs["ContentType"] == "audio/mp4"
+
+
 def test_upload_error_includes_supabase_response(monkeypatch, tmp_path: Path):
     audio = tmp_path / "episode.m4a"
     audio.write_bytes(b"audio")

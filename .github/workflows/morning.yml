@@ -33,6 +33,10 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_AUDIO_BUCKET: audio-briefs
+      SUPABASE_S3_ENDPOINT: https://snyjtckbvbarempgyhrp.storage.supabase.co/storage/v1/s3
+      SUPABASE_S3_REGION: eu-west-1
+      SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
+      SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
       KOKORO_MODEL_PATH: ${{ github.workspace }}/.cache/kokoro/kokoro-v0_19.int8.onnx
       KOKORO_VOICES_PATH: ${{ github.workspace }}/.cache/kokoro/voices.bin
     steps:

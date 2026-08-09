@@ -11,7 +11,33 @@ from app.config import settings
 
 
 def cloud_storage_enabled() -> bool:
-    return bool(settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY)
+    return bool(
+        settings.SUPABASE_URL
+        and (
+            settings.SUPABASE_SERVICE_ROLE_KEY
+            or (settings.SUPABASE_S3_ACCESS_KEY_ID and settings.SUPABASE_S3_SECRET_ACCESS_KEY)
+        )
+    )
+
+
+def _s3_enabled() -> bool:
+    return bool(
+        settings.SUPABASE_S3_ENDPOINT
+        and settings.SUPABASE_S3_ACCESS_KEY_ID
+        and settings.SUPABASE_S3_SECRET_ACCESS_KEY
+    )
+
+
+def _s3_client():
+    import boto3
+
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.SUPABASE_S3_ENDPOINT,
+        region_name=settings.SUPABASE_S3_REGION,
+        aws_access_key_id=settings.SUPABASE_S3_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.SUPABASE_S3_SECRET_ACCESS_KEY,
+    )
 
 
 def _object_url(key: str, public: bool = False) -> str:
@@ -34,6 +60,16 @@ def _service_headers() -> dict[str, str]:
 def upload_audio(path: Path, key: str) -> None:
     if not cloud_storage_enabled():
         return
+    if _s3_enabled():
+        with path.open("rb") as audio:
+            _s3_client().put_object(
+                Bucket=settings.SUPABASE_AUDIO_BUCKET,
+                Key=key,
+                Body=audio,
+                ContentType="audio/mp4",
+                CacheControl="public, max-age=3600",
+            )
+        return
     headers = {
         **_service_headers(),
         "Content-Type": "audio/mp4",
@@ -54,6 +90,9 @@ def upload_audio(path: Path, key: str) -> None:
 
 def delete_audio(key: str) -> None:
     if not cloud_storage_enabled():
+        return
+    if _s3_enabled():
+        _s3_client().delete_object(Bucket=settings.SUPABASE_AUDIO_BUCKET, Key=key)
         return
     headers = _service_headers()
     response = requests.delete(

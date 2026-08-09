@@ -1,3 +1,4 @@
 -r requirements.txt
 kokoro-onnx==0.3.7
 soundfile>=0.13.1
+boto3>=1.40,<2
