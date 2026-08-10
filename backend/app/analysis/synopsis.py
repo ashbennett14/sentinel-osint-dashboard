@@ -14,6 +14,7 @@ from app.analysis.llm_client import complete
 logger = logging.getLogger("sentinel.analysis.synopsis")
 
 WINDOWS = {"24h": 1, "48h": 2, "7d": 7, "30d": 30}
+MODEL_REQUEST_COOLDOWN_SECONDS = 65.0
 
 AO_LABELS = {
     "AO_HIGH_NORTH": "AO HIGH NORTH (High North / Finland / Baltic states) — hybrid, grey-zone and regional security activity",
@@ -564,8 +565,9 @@ def generate_ao_synopses(db: Session, ao: str) -> list:
         )
         parsed = {}
         for group in (("24h", "48h"), ("7d", "30d")):
-            if parsed:
-                time.sleep(3.0)
+            # Gemini's free allowance is sensitive to closely spaced structured
+            # requests. Wait for the rolling request window before every retry.
+            time.sleep(MODEL_REQUEST_COOLDOWN_SECONDS)
             parsed.update(_request_synopsis_windows(ao, window_articles, group))
         _validate_synopsis(
             parsed,
@@ -654,7 +656,10 @@ def _previous_model_synopses(db: Session, ao: str) -> list[Synopsis]:
     return previous
 
 
-def generate_all_synopses(db: Session, delay_seconds: float = 5.0):
+def generate_all_synopses(
+    db: Session,
+    delay_seconds: float = MODEL_REQUEST_COOLDOWN_SECONDS,
+):
     """One isolated LLM call per AO, producing all windows for that AO."""
     results = []
     aos = list(AO_LABELS.keys())
