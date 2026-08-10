@@ -2,8 +2,11 @@ name: Morning analyst brief and podcast
 
 on:
   schedule:
-    - cron: "0 5 * * *"
-    - cron: "0 6 * * *"
+    # Run away from the top of the hour, when GitHub warns scheduled jobs are
+    # most likely to be delayed or dropped. The application checks London time
+    # and whether today's ready episode already exists, so these are idempotent
+    # DST-safe production and recovery attempts.
+    - cron: "17 5,6,7 * * *"
   workflow_dispatch:
     inputs:
       force:

@@ -160,8 +160,31 @@ def scheduled_morning_is_due(force: bool) -> bool:
     if force:
         return True
     local_now = datetime.now(ZoneInfo(settings.AUDIO_BRIEF_TIMEZONE))
-    due = local_now.hour == 6
-    logger.info("Europe/London time is %s; morning job due=%s", local_now.isoformat(), due)
+    if local_now.hour < 6:
+        logger.info(
+            "Europe/London time is %s; morning job due=False (before 06:00)",
+            local_now.isoformat(),
+        )
+        return False
+
+    episode_date = local_now.date().isoformat()
+    db = SessionLocal()
+    try:
+        ready_episode_exists = db.query(AudioBrief).filter(
+            AudioBrief.episode_date == episode_date,
+            AudioBrief.status == "ready",
+        ).first() is not None
+    finally:
+        db.close()
+
+    due = not ready_episode_exists
+    logger.info(
+        "Europe/London time is %s; ready episode for %s exists=%s; morning job due=%s",
+        local_now.isoformat(),
+        episode_date,
+        ready_episode_exists,
+        due,
+    )
     return due
 
 
