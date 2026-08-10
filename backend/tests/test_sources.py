@@ -23,9 +23,19 @@ def test_source_catalogue_uses_valid_aos_and_reliability_tiers():
 
 def test_balkans_has_substantive_dedicated_coverage():
     counts = Counter(source["ao"] for source in SOURCES)
-    assert counts["AO_BALKANS"] >= 50
+    assert counts["AO_BALKANS"] >= 80
 
     balkans = [source for source in SOURCES if source["ao"] == "AO_BALKANS"]
     assert sum(source["reliability"] == "official" for source in balkans) >= 12
     assert sum(source["reliability"] == "established_media" for source in balkans) >= 8
     assert sum(source["reliability"] == "regional_specialist" for source in balkans) >= 8
+
+
+def test_high_north_has_substantive_dedicated_coverage():
+    counts = Counter(source["ao"] for source in SOURCES)
+    assert counts["AO_HIGH_NORTH"] >= 60
+
+    high_north = [source for source in SOURCES if source["ao"] == "AO_HIGH_NORTH"]
+    assert sum(source["reliability"] == "official" for source in high_north) >= 20
+    assert sum(source["reliability"] == "established_media" for source in high_north) >= 15
+    assert sum(source["reliability"] == "regional_specialist" for source in high_north) >= 10

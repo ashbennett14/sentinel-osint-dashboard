@@ -658,6 +658,73 @@ SOURCES.extend([
     {"name": "ICRC Lebanon and Syria", "kind": "rss", "url_or_handle": _google_news("site:icrc.org Lebanon OR Syria when:30d"), "ao": "AO_LEVANT", "reliability": "official"},
 ])
 
+# Coverage expansion v9 — High North and Balkans depth pack. Every query below
+# was live-tested and required to return populated results before inclusion.
+SOURCES.extend([
+    # AO HIGH NORTH — authorities, maritime security and resilience
+    {"name": "Danish Armed Forces English", "kind": "rss", "url_or_handle": _google_news("site:forsvaret.dk/en Arctic OR Baltic OR defence when:90d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Danish Ministry of Defence English", "kind": "rss", "url_or_handle": _google_news("site:fmn.dk/en Arctic OR defence OR security when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Government of the Faroe Islands English", "kind": "rss", "url_or_handle": _google_news("site:government.fo/en/news security OR Arctic OR defence when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Estonian Internal Security Service English", "kind": "rss", "url_or_handle": _google_news("site:kapo.ee/en security OR threat when:365d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Latvian State Security Service English", "kind": "rss", "url_or_handle": _google_news("site:vdd.gov.lv/en news security OR threat when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Lithuanian Armed Forces English", "kind": "rss", "url_or_handle": _google_news("site:kariuomene.lt/en defence OR exercise OR Baltic when:90d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Norwegian Coastal Administration English", "kind": "rss", "url_or_handle": _google_news("site:kystverket.no/en news Arctic OR security OR navigation when:90d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Norwegian Defence Research Establishment", "kind": "rss", "url_or_handle": _google_news("site:ffi.no/en Arctic OR High North OR Russia when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Swedish Coast Guard English", "kind": "rss", "url_or_handle": _google_news("site:kustbevakningen.se/en Baltic OR security OR coast guard when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "NATO Joint Force Command Norfolk", "kind": "rss", "url_or_handle": _google_news("site:jfcnorfolk.nato.int High North OR Arctic OR Baltic when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "NATO Maritime Command Baltic", "kind": "rss", "url_or_handle": _google_news("site:mc.nato.int Baltic OR Arctic when:90d"), "ao": "AO_HIGH_NORTH", "reliability": "official"},
+
+    # AO HIGH NORTH — specialist analysis and defence media
+    {"name": "Baltic Defence College", "kind": "rss", "url_or_handle": _google_news("site:baltdefcol.org security OR defence when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "regional_specialist"},
+    {"name": "International Centre for Defence and Security Estonia", "kind": "rss", "url_or_handle": _google_news("site:icds.ee/en Baltic OR Nordic OR Russia when:90d"), "ao": "AO_HIGH_NORTH", "reliability": "regional_specialist"},
+    {"name": "Latvian Institute of International Affairs", "kind": "rss", "url_or_handle": _google_news("site:liia.lv/en Baltic OR security OR Russia when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "regional_specialist"},
+    {"name": "Swedish Institute of International Affairs", "kind": "rss", "url_or_handle": _google_news("site:ui.se/english Baltic OR Arctic OR security when:180d"), "ao": "AO_HIGH_NORTH", "reliability": "regional_specialist"},
+    {"name": "The Arctic Institute Security", "kind": "rss", "url_or_handle": _google_news("site:thearcticinstitute.org security OR defence when:90d"), "ao": "AO_HIGH_NORTH", "reliability": "regional_specialist"},
+    {"name": "Arctic Today Security", "kind": "rss", "url_or_handle": _google_news("site:arctictoday.com security OR military OR Russia when:30d"), "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "Naval News High North and Baltic", "kind": "rss", "url_or_handle": _google_news("site:navalnews.com Arctic OR Baltic OR Norway OR Sweden OR Finland when:30d"), "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "USNI News Arctic and Baltic", "kind": "rss", "url_or_handle": _google_news("site:news.usni.org Arctic OR Baltic OR High North when:60d"), "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "Breaking Defense Nordic and Arctic", "kind": "rss", "url_or_handle": _google_news("site:breakingdefense.com Arctic OR Nordic OR Baltic when:60d"), "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "Defense News Nordic and Baltic", "kind": "rss", "url_or_handle": _google_news("site:defensenews.com Nordic OR Baltic OR Arctic when:30d"), "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "Nordic Cyber Security Watch", "kind": "rss", "url_or_handle": _google_news("(Finland OR Sweden OR Norway OR Estonia OR Latvia OR Lithuania) (cyberattack OR ransomware OR critical infrastructure) when:7d"), "ao": "AO_HIGH_NORTH", "reliability": "unverified"},
+
+    # AO BALKANS — police, border, defence and international missions
+    {"name": "Montenegro Ministry of Defence English", "kind": "rss", "url_or_handle": _google_news("site:gov.me defence Montenegro when:365d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "Montenegro Police and Interior English", "kind": "rss", "url_or_handle": _google_news("site:gov.me police Montenegro security when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "Bosnia State Investigation and Protection Agency", "kind": "rss", "url_or_handle": _google_news("site:sipa.gov.ba/en security OR arrest OR operation when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "Bosnia Border Police English", "kind": "rss", "url_or_handle": _google_news("site:granpol.gov.ba border OR security when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "North Macedonia Interior Ministry English", "kind": "rss", "url_or_handle": _google_news("site:mvr.gov.mk/en police OR security when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "Bulgaria Interior Ministry English", "kind": "rss", "url_or_handle": _google_news("site:mvr.bg/en police OR security when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "Slovenian Police English", "kind": "rss", "url_or_handle": _google_news("site:policija.si/eng news security OR police when:90d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "OSCE Mission in Kosovo", "kind": "rss", "url_or_handle": _google_news("site:osce.org Kosovo mission security when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "OSCE Mission to Serbia", "kind": "rss", "url_or_handle": _google_news("site:osce.org/mission-to-serbia security OR police when:90d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "OSCE Mission to Skopje", "kind": "rss", "url_or_handle": _google_news("site:osce.org Skopje mission security when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "OSCE Mission to Montenegro", "kind": "rss", "url_or_handle": _google_news("site:osce.org Montenegro mission security when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "OSCE Presence in Albania", "kind": "rss", "url_or_handle": _google_news("site:osce.org Albania presence security when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "Frontex Western Balkans", "kind": "rss", "url_or_handle": _google_news("site:frontex.europa.eu Western Balkans OR Serbia OR Albania OR Bosnia when:90d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "Europol Western Balkans", "kind": "rss", "url_or_handle": _google_news("site:europol.europa.eu Western Balkans OR Serbia OR Albania OR Bosnia when:90d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "UNODC South Eastern Europe", "kind": "rss", "url_or_handle": _google_news("site:unodc.org/southeasterneurope Balkans OR Serbia OR Bosnia OR Albania when:180d"), "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "WeBalkans EU", "kind": "rss", "url_or_handle": _google_news("site:webalkans.eu/en news security OR defence OR resilience when:90d"), "ao": "AO_BALKANS", "reliability": "official"},
+
+    # AO BALKANS — local English media and specialist security analysis
+    {"name": "SEESAC Arms Control Balkans", "kind": "rss", "url_or_handle": _google_news("site:seesac.org security OR arms OR Balkans when:180d"), "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "RACVIAC Centre for Security Cooperation", "kind": "rss", "url_or_handle": _google_news("site:racviac.org security OR Balkans when:180d"), "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "DCAF South East Europe", "kind": "rss", "url_or_handle": _google_news("site:dcaf.ch South East Europe OR Balkans OR Kosovo when:180d"), "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "Global Initiative Western Balkans Observatory", "kind": "rss", "url_or_handle": _google_news("site:globalinitiative.net Western Balkans OR Serbia OR Kosovo OR Bosnia when:90d"), "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "IDSCS North Macedonia", "kind": "rss", "url_or_handle": _google_news("site:idscs.org.mk/en security OR Macedonia when:365d"), "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "Analytica North Macedonia", "kind": "rss", "url_or_handle": _google_news("site:analyticamk.org security OR Macedonia when:365d"), "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "Kosovo 2.0 English", "kind": "rss", "url_or_handle": _google_news("site:kosovotwopointzero.com/en Kosovo when:30d"), "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "Prishtina Insight", "kind": "rss", "url_or_handle": _google_news("site:prishtinainsight.com Kosovo when:30d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Tirana Times", "kind": "rss", "url_or_handle": _google_news("site:tiranatimes.com Albania security OR politics when:60d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Total Croatia News", "kind": "rss", "url_or_handle": _google_news("site:total-croatia-news.com Croatia security OR defence OR politics when:30d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Slovenia Times English", "kind": "rss", "url_or_handle": _google_news("site:sloveniatimes.com security OR defence OR politics when:60d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "STA Slovenian Press Agency English", "kind": "rss", "url_or_handle": _google_news("site:english.sta.si Slovenia security OR defence when:30d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Tanjug English", "kind": "rss", "url_or_handle": _google_news("site:tanjug.rs/english Serbia security OR Kosovo when:30d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "SeeNews Western Balkans", "kind": "rss", "url_or_handle": _google_news("site:seenews.com Western Balkans OR Serbia OR Bosnia OR Albania when:30d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "bne IntelliNews Western Balkans", "kind": "rss", "url_or_handle": _google_news("site:intellinews.com Western Balkans OR Serbia OR Kosovo OR Bosnia when:30d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Euractiv Western Balkans", "kind": "rss", "url_or_handle": _google_news("site:euractiv.com Western Balkans OR Serbia OR Kosovo when:30d"), "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Balkan Defence Procurement Watch", "kind": "rss", "url_or_handle": _google_news("(Serbia OR Croatia OR Albania OR Kosovo OR Bulgaria OR Greece) (weapons purchase OR defence procurement OR military acquisition) when:14d"), "ao": "AO_BALKANS", "reliability": "unverified"},
+])
+
 # Split the original combined northern-Europe collection pack into the two
 # distinct AOs. Keeping this routing in one explicit table prevents individual
 # source declarations added over several versions from silently retaining the
