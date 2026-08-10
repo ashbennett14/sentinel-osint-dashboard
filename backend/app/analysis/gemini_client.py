@@ -75,7 +75,19 @@ def complete(
     try:
         candidate = data["candidates"][0]
         parts = candidate["content"]["parts"]
-        return "".join(p.get("text", "") for p in parts).strip()
+        text = "".join(p.get("text", "") for p in parts).strip()
+        finish_reason = candidate.get("finishReason", "STOP")
+        if finish_reason != "STOP":
+            usage = data.get("usageMetadata", {})
+            logger.warning(
+                "Gemini stopped with finishReason=%s (prompt=%s, output=%s, chars=%d)",
+                finish_reason,
+                usage.get("promptTokenCount", "unknown"),
+                usage.get("candidatesTokenCount", "unknown"),
+                len(text),
+            )
+            raise RuntimeError(f"Gemini response was incomplete: {finish_reason}")
+        return text
     except (KeyError, IndexError) as exc:
         logger.warning("Unexpected Gemini response shape: %s", data)
         raise RuntimeError(f"Could not parse Gemini response: {exc}") from exc

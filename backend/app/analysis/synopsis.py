@@ -41,7 +41,8 @@ YOU MUST respond with ONLY a raw JSON object — no markdown fences, no ```json,
 no preamble, no explanation, no text before or after the JSON. The response must \
 start with { and end with }.
 
-The JSON must have exactly these four top-level keys: "24h", "48h", "7d", "30d". \
+The user prompt will state the REQUIRED WINDOWS. The JSON must have exactly those \
+window labels as its top-level keys and no others. \
 Each value is an object with exactly these keys: "strategic", "operational", \
 "tactical". For a window containing reporting, each field must be a substantive \
 paragraph of 70-130 words and must be specific to that timeframe. Strategic must \
@@ -66,6 +67,21 @@ SYNOPSIS_SCHEMA = {
     "properties": {window: SECTION_SCHEMA for window in WINDOWS},
     "required": list(WINDOWS),
 }
+
+FALLBACK_SIGNATURES = (
+    "available developments do not yet demonstrate a fundamental shift",
+    "the current disposition favours continuity",
+    "the available evidence supports a localised assessment",
+)
+
+
+def _schema_for_windows(windows) -> dict:
+    windows = tuple(windows)
+    return {
+        "type": "object",
+        "properties": {window: SECTION_SCHEMA for window in windows},
+        "required": list(windows),
+    }
 
 
 def _extract_json(raw: str) -> dict:
@@ -140,11 +156,101 @@ def _format_articles(articles) -> str:
     return "\n".join(lines) if lines else "(no qualifying reporting in this window)"
 
 
-def _validate_synopsis(parsed: dict, window_counts: dict[str, int] | None = None) -> None:
+def _article_identity(article) -> str:
+    return str(
+        getattr(article, "id", None)
+        or getattr(article, "url", None)
+        or getattr(article, "title", None)
+        or id(article)
+    )
+
+
+def _compact_article_block(window_articles: dict[str, list]) -> str:
+    """Format each development once and tag the windows in which it belongs."""
+    unique = {}
+    memberships: dict[str, list[str]] = {}
+    for window in WINDOWS:
+        for article in window_articles.get(window, []):
+            key = _article_identity(article)
+            unique.setdefault(key, article)
+            memberships.setdefault(key, []).append(window)
+
+    if not unique:
+        return "(no qualifying reporting in the requested windows)"
+
+    ordered = sorted(
+        unique.items(),
+        key=lambda item: (
+            _ao_relevance_score(item[1]),
+            getattr(item[1], "severity", 0) or 0,
+            getattr(item[1], "published_at", datetime.min),
+        ),
+        reverse=True,
+    )
+    now = datetime.utcnow()
+    lines = []
+    for index, (key, article) in enumerate(ordered, start=1):
+        source = getattr(article, "source", None)
+        reliability = getattr(source, "reliability", "unverified") if source else "unverified"
+        published = getattr(article, "published_at", now)
+        age_hours = max(0, int((now - published).total_seconds() / 3600))
+        title = _clean_english_text(getattr(article, "title", ""), 180)
+        summary = _clean_english_text(getattr(article, "summary", ""), 180)
+        category = (getattr(article, "category", None) or "security_reporting").replace("_", " ")
+        country = getattr(article, "country", None) or "unspecified location"
+        detail = title or EVENT_LABELS.get(getattr(article, "category", None), "Security activity")
+        if summary and summary.lower() not in detail.lower():
+            detail = f"{detail} — {summary}"
+        lines.append(
+            f"E{index:03d} [windows={','.join(memberships[key])}; age={age_hours}h; "
+            f"location={country}; category={category}; reliability={reliability}] {detail}"
+        )
+    return "\n".join(lines)
+
+
+def _request_synopsis_windows(
+    ao: str,
+    window_articles: dict[str, list],
+    windows,
+) -> dict:
+    windows = tuple(windows)
+    counts = {window: len(window_articles.get(window, [])) for window in windows}
+    user_prompt = (
+        f"AO: {AO_LABELS.get(ao, ao)}\n"
+        f"REQUIRED WINDOWS: {', '.join(windows)}\n"
+        "Each development below appears once. Its windows tag states every rolling "
+        "period to which it belongs. Use only events tagged for the section you are writing.\n\n"
+        f"=== UNIQUE AUTHORISED DEVELOPMENTS ===\n{_compact_article_block(window_articles)}\n\n"
+        "Produce the requested synopsis sections now. Return only the raw JSON object."
+    )
+    raw = complete(
+        SYSTEM_PROMPT,
+        user_prompt,
+        max_tokens=7000 if len(windows) == len(WINDOWS) else 4000,
+        json_schema=_schema_for_windows(windows),
+        thinking_level="low",
+    )
+    parsed = _extract_json(raw)
+    if not parsed:
+        logger.warning(
+            "Could not extract valid JSON for %s windows=%s (response chars=%d)",
+            ao,
+            ",".join(windows),
+            len(raw),
+        )
+    _validate_synopsis(parsed, counts, windows=windows)
+    return parsed
+
+
+def _validate_synopsis(
+    parsed: dict,
+    window_counts: dict[str, int] | None = None,
+    windows=None,
+) -> None:
     """Reject incomplete model output instead of persisting empty placeholders."""
     if not isinstance(parsed, dict):
         raise ValueError("Synopsis response was not a JSON object")
-    for window in WINDOWS:
+    for window in tuple(windows or WINDOWS):
         section = parsed.get(window)
         if not isinstance(section, dict):
             raise ValueError(f"Synopsis response is missing the {window} section")
@@ -446,41 +552,28 @@ def _fallback_window_assessment(articles: list[Article], window: str, days: floa
 
 
 def generate_ao_synopses(db: Session, ao: str) -> list:
-    """One LLM call produces all 4 window synopses for a single AO."""
+    """Generate all windows compactly, with two smaller calls as recovery."""
     window_articles = {w: _window_articles(db, ao, days) for w, days in WINDOWS.items()}
-
-    sections = []
-    for w in WINDOWS:
-        arts = window_articles[w]
-        sections.append(
-            f"=== Window: last {w} ({len(arts)} qualifying items) ===\n"
-            f"{_format_articles(arts)}"
+    try:
+        parsed = _request_synopsis_windows(ao, window_articles, WINDOWS)
+    except Exception as initial_exc:  # noqa: BLE001
+        logger.warning(
+            "Full synopsis response failed validation for %s; retrying in split windows: %s",
+            ao,
+            initial_exc,
+        )
+        parsed = {}
+        for group in (("24h", "48h"), ("7d", "30d")):
+            if parsed:
+                time.sleep(3.0)
+            parsed.update(_request_synopsis_windows(ao, window_articles, group))
+        _validate_synopsis(
+            parsed,
+            {window: len(articles) for window, articles in window_articles.items()},
         )
 
-    user_prompt = (
-        f"AO: {AO_LABELS.get(ao, ao)}\n\n"
-        + "\n\n".join(sections)
-        + "\n\nProduce the synopsis now. Remember: respond with ONLY the raw JSON "
-          "object, starting with { and ending with }, no markdown, no fences."
-    )
-
-    raw = complete(
-        SYSTEM_PROMPT,
-        user_prompt,
-        max_tokens=5000,
-        json_schema=SYNOPSIS_SCHEMA,
-    )
-    logger.debug("Raw synopsis response for %s (first 200 chars): %s", ao, raw[:200])
-
-    parsed = _extract_json(raw)
-    if not parsed:
-        logger.warning("Could not extract valid JSON from synopsis response for %s", ao)
-    _validate_synopsis(
-        parsed,
-        {window: len(articles) for window, articles in window_articles.items()},
-    )
-
     results = []
+    generated_at = datetime.utcnow()
     for window in WINDOWS:
         window_data = parsed[window]
         synopsis = Synopsis(
@@ -489,7 +582,7 @@ def generate_ao_synopses(db: Session, ao: str) -> list:
             strategic=window_data.get("strategic", ""),
             operational=window_data.get("operational", ""),
             tactical=window_data.get("tactical", ""),
-            generated_at=datetime.utcnow(),
+            generated_at=generated_at,
             source_article_count=len(window_articles[window]),
         )
         db.add(synopsis)
@@ -528,6 +621,39 @@ def generate_fallback_ao_synopses(db: Session, ao: str) -> list:
     return results
 
 
+def _looks_like_fallback(synopsis: Synopsis) -> bool:
+    text = " ".join(
+        filter(None, (synopsis.strategic, synopsis.operational, synopsis.tactical))
+    ).lower()
+    return any(signature in text for signature in FALLBACK_SIGNATURES)
+
+
+def _previous_model_synopses(db: Session, ao: str) -> list[Synopsis]:
+    """Return the newest complete non-fallback row for every window, if available."""
+    previous = []
+    for window in WINDOWS:
+        candidates = (
+            db.query(Synopsis)
+            .filter(Synopsis.ao == ao, Synopsis.window == window)
+            .order_by(Synopsis.generated_at.desc())
+            .limit(12)
+            .all()
+        )
+        selected = next(
+            (
+                row for row in candidates
+                if all((getattr(row, field, "") or "").strip() for field in (
+                    "strategic", "operational", "tactical"
+                )) and not _looks_like_fallback(row)
+            ),
+            None,
+        )
+        if selected is None:
+            return []
+        previous.append(selected)
+    return previous
+
+
 def generate_all_synopses(db: Session, delay_seconds: float = 5.0):
     """One isolated LLM call per AO, producing all windows for that AO."""
     results = []
@@ -536,9 +662,24 @@ def generate_all_synopses(db: Session, delay_seconds: float = 5.0):
         try:
             results.extend(generate_ao_synopses(db, ao))
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Model synopsis failed for %s; using isolated fallback: %s", ao, exc)
             db.rollback()
-            results.extend(generate_fallback_ao_synopses(db, ao))
+            previous = _previous_model_synopses(db, ao)
+            if previous:
+                logger.error(
+                    "Model synopsis failed for %s after split retry; preserving the "
+                    "previous validated model product: %s",
+                    ao,
+                    exc,
+                )
+                results.extend(previous)
+            else:
+                logger.warning(
+                    "Model synopsis failed for %s after split retry; no previous "
+                    "model product is available, using isolated fallback: %s",
+                    ao,
+                    exc,
+                )
+                results.extend(generate_fallback_ao_synopses(db, ao))
         if i < len(aos) - 1:
             time.sleep(delay_seconds)
     return results
