@@ -18,6 +18,7 @@ class Settings:
 
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+    GEMINI_FALLBACK_MODEL: str = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite")
     ENABLE_FACT_CHECK: bool = os.getenv("ENABLE_FACT_CHECK", "true").lower() == "true"
 
     TWITTER_BEARER_TOKEN: str = os.getenv("TWITTER_BEARER_TOKEN", "")

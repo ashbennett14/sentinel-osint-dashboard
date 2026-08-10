@@ -17,6 +17,13 @@ logger = logging.getLogger("sentinel.analysis.gemini")
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
+def _daily_quota_exhausted(response) -> bool:
+    return (
+        response.status_code == 429
+        and "GenerateRequestsPerDay" in (response.text or "")
+    )
+
+
 def complete(
     system: str,
     user: str,
@@ -31,7 +38,6 @@ def complete(
             "synopsis and analyst brief generation."
         )
 
-    url = f"{BASE_URL}/{settings.GEMINI_MODEL}:generateContent"
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": settings.GEMINI_API_KEY,
@@ -53,24 +59,52 @@ def complete(
         "generationConfig": generation_config,
     }
 
+    models = [settings.GEMINI_MODEL]
+    fallback_model = settings.GEMINI_FALLBACK_MODEL.strip()
+    if fallback_model and fallback_model not in models:
+        models.append(fallback_model)
+
     resp = None
-    for attempt in range(4):
-        resp = requests.post(url, headers=headers, json=payload, timeout=120)
-        if resp.status_code not in (429, 503):
-            break
-        if attempt == 3:
-            break
-        retry_after = resp.headers.get("Retry-After")
-        try:
-            delay = float(retry_after) if retry_after else 10.0 * (attempt + 1)
-        except ValueError:
-            delay = 10.0 * (attempt + 1)
-        logger.warning(
-            "Gemini returned %s; retrying in %.1fs", resp.status_code, delay
-        )
-        time.sleep(min(delay, 30.0))
-    resp.raise_for_status()
-    data = resp.json()
+    data = None
+    for model_index, model in enumerate(models):
+        url = f"{BASE_URL}/{model}:generateContent"
+        switch_model = False
+        for attempt in range(4):
+            resp = requests.post(url, headers=headers, json=payload, timeout=120)
+            if _daily_quota_exhausted(resp) and model_index < len(models) - 1:
+                logger.warning(
+                    "Gemini daily free allowance exhausted for %s; switching to %s",
+                    model,
+                    models[model_index + 1],
+                )
+                switch_model = True
+                break
+            if resp.status_code not in (429, 503):
+                break
+            if attempt == 3:
+                break
+            retry_after = resp.headers.get("Retry-After")
+            try:
+                delay = float(retry_after) if retry_after else 10.0 * (attempt + 1)
+            except ValueError:
+                delay = 10.0 * (attempt + 1)
+            logger.warning(
+                "Gemini returned %s from %s; retrying in %.1fs",
+                resp.status_code,
+                model,
+                delay,
+            )
+            time.sleep(min(delay, 30.0))
+        if switch_model:
+            continue
+        resp.raise_for_status()
+        data = resp.json()
+        break
+
+    if data is None:
+        if resp is not None:
+            resp.raise_for_status()
+        raise RuntimeError("Gemini request did not return a response")
 
     try:
         candidate = data["candidates"][0]
