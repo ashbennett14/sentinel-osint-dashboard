@@ -6,7 +6,7 @@ on:
     # most likely to be delayed or dropped. The application checks London time
     # and whether today's ready episode already exists, so these are idempotent
     # DST-safe production and recovery attempts.
-    - cron: "17 5,6,7 * * *"
+    - cron: "17 4,5,6 * * *"
   workflow_dispatch:
     inputs:
       force:

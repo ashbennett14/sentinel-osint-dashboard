@@ -33,13 +33,23 @@ def _london_time(hour: int) -> datetime:
     return datetime(2026, 8, 10, hour, 15, tzinfo=ZoneInfo("Europe/London"))
 
 
-def test_scheduled_morning_waits_until_six_local():
+def test_scheduled_morning_waits_until_five_local():
     with patch("scripts.cloud_job.datetime") as clock, patch(
         "scripts.cloud_job.SessionLocal"
     ) as session:
-        clock.now.return_value = _london_time(5)
+        clock.now.return_value = _london_time(4)
         assert scheduled_morning_is_due(False) is False
         session.assert_not_called()
+
+
+def test_scheduled_morning_runs_from_five_local_when_today_is_missing():
+    db = _Db()
+    with patch("scripts.cloud_job.datetime") as clock, patch(
+        "scripts.cloud_job.SessionLocal", return_value=db
+    ):
+        clock.now.return_value = _london_time(5)
+        assert scheduled_morning_is_due(False) is True
+    assert db.closed is True
 
 
 def test_scheduled_morning_runs_late_when_today_is_missing():

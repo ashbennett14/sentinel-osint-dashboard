@@ -160,9 +160,9 @@ def scheduled_morning_is_due(force: bool) -> bool:
     if force:
         return True
     local_now = datetime.now(ZoneInfo(settings.AUDIO_BRIEF_TIMEZONE))
-    if local_now.hour < 6:
+    if local_now.hour < 5:
         logger.info(
-            "Europe/London time is %s; morning job due=False (before 06:00)",
+            "Europe/London time is %s; morning job due=False (before 05:00)",
             local_now.isoformat(),
         )
         return False
