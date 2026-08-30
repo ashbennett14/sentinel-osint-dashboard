@@ -63,8 +63,13 @@ function initMap() {
     return;
   }
   map = L.map("map", { zoomControl: true }).setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; OpenStreetMap &copy; CARTO',
+  // Direct, key-free tiles; let the browser honour the provider's cache headers.
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    className: "sentinel-basemap",
+    referrerPolicy: "strict-origin-when-cross-origin",
+    updateWhenIdle: true,
+    keepBuffer: 1,
     maxZoom: 18,
   }).addTo(map);
   markersLayer = L.layerGroup().addTo(map);
