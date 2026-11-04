@@ -24,6 +24,10 @@ def _daily_quota_exhausted(response) -> bool:
     )
 
 
+def _retryable_service_failure(response) -> bool:
+    return response.status_code in (429, 500, 502, 503, 504)
+
+
 def complete(
     system: str,
     user: str,
@@ -70,7 +74,29 @@ def complete(
         url = f"{BASE_URL}/{model}:generateContent"
         switch_model = False
         for attempt in range(4):
-            resp = requests.post(url, headers=headers, json=payload, timeout=120)
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=120)
+            except requests.RequestException as exc:
+                if model_index < len(models) - 1 and attempt >= 1:
+                    logger.warning(
+                        "Gemini request to %s failed twice; switching to %s: %s",
+                        model,
+                        models[model_index + 1],
+                        exc,
+                    )
+                    switch_model = True
+                    break
+                if attempt == 3:
+                    raise
+                delay = 10.0 * (attempt + 1)
+                logger.warning(
+                    "Gemini request to %s failed; retrying in %.1fs: %s",
+                    model,
+                    delay,
+                    exc,
+                )
+                time.sleep(min(delay, 30.0))
+                continue
             if _daily_quota_exhausted(resp) and model_index < len(models) - 1:
                 logger.warning(
                     "Gemini daily free allowance exhausted for %s; switching to %s",
@@ -79,7 +105,16 @@ def complete(
                 )
                 switch_model = True
                 break
-            if resp.status_code not in (429, 503):
+            if not _retryable_service_failure(resp):
+                break
+            if model_index < len(models) - 1 and attempt >= 1:
+                logger.warning(
+                    "Gemini returned %s twice from %s; switching to %s",
+                    resp.status_code,
+                    model,
+                    models[model_index + 1],
+                )
+                switch_model = True
                 break
             if attempt == 3:
                 break

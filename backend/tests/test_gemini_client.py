@@ -47,6 +47,59 @@ def test_daily_quota_switches_to_fallback_model_immediately():
     sleep.assert_not_called()
 
 
+def test_repeated_service_failure_switches_to_fallback_model():
+    unavailable = _Response(503, text="Service unavailable")
+    success = _Response(200, data={
+        "candidates": [{
+            "finishReason": "STOP",
+            "content": {"parts": [{"text": "fallback response"}]},
+        }],
+    })
+    with patch.object(gemini_client.settings, "GEMINI_API_KEY", "test-key"), patch.object(
+        gemini_client.settings, "GEMINI_MODEL", "primary-model"
+    ), patch.object(
+        gemini_client.settings, "GEMINI_FALLBACK_MODEL", "fallback-model"
+    ), patch(
+        "app.analysis.gemini_client.requests.post",
+        side_effect=[unavailable, unavailable, success],
+    ) as post, patch("app.analysis.gemini_client.time.sleep") as sleep:
+        result = gemini_client.complete("system", "user")
+
+    assert result == "fallback response"
+    assert post.call_count == 3
+    assert "/primary-model:" in post.call_args_list[0].args[0]
+    assert "/primary-model:" in post.call_args_list[1].args[0]
+    assert "/fallback-model:" in post.call_args_list[2].args[0]
+    sleep.assert_called_once_with(10.0)
+
+
+def test_repeated_timeout_switches_to_fallback_model():
+    success = _Response(200, data={
+        "candidates": [{
+            "finishReason": "STOP",
+            "content": {"parts": [{"text": "fallback response"}]},
+        }],
+    })
+    with patch.object(gemini_client.settings, "GEMINI_API_KEY", "test-key"), patch.object(
+        gemini_client.settings, "GEMINI_MODEL", "primary-model"
+    ), patch.object(
+        gemini_client.settings, "GEMINI_FALLBACK_MODEL", "fallback-model"
+    ), patch(
+        "app.analysis.gemini_client.requests.post",
+        side_effect=[
+            gemini_client.requests.Timeout("first timeout"),
+            gemini_client.requests.Timeout("second timeout"),
+            success,
+        ],
+    ) as post, patch("app.analysis.gemini_client.time.sleep") as sleep:
+        result = gemini_client.complete("system", "user")
+
+    assert result == "fallback response"
+    assert post.call_count == 3
+    assert "/fallback-model:" in post.call_args_list[2].args[0]
+    sleep.assert_called_once_with(10.0)
+
+
 def test_incomplete_finish_reason_is_rejected():
     incomplete = _Response(200, data={
         "candidates": [{
