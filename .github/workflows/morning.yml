@@ -43,10 +43,10 @@ jobs:
       KOKORO_MODEL_PATH: ${{ github.workspace }}/.cache/kokoro/kokoro-v0_19.int8.onnx
       KOKORO_VOICES_PATH: ${{ github.workspace }}/.cache/kokoro/voices.bin
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: "3.12", cache: pip, cache-dependency-path: backend/cloud-requirements.txt }
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: .cache/kokoro
           key: kokoro-v019-int8
