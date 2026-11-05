@@ -18,6 +18,7 @@ from pathlib import Path
 
 AO_KEYS = ("high-north", "eastern-europe", "balkans", "levant")
 CUE_MOTIFS = {
+    "opening": (293.66, 440.00, 587.33),
     "high-north": (293.66, 349.23, 440.00),
     "eastern-europe": (261.63, 311.13, 392.00),
     "balkans": (293.66, 392.00, 440.00),
@@ -111,22 +112,36 @@ def _render_cue(path: Path, key: str, audio_params: tuple) -> None:
     motif = CUE_MOTIFS[key]
     frame_count = int(CUE_DURATION_SECONDS * sample_rate)
     frames = bytearray()
-    note_starts = (0.42, 1.18, 1.94)
+    # SEN / TI / NEL: a short-short-long signature, with a soft fifth underneath.
+    # Regional variants share the rhythm and sound palette of the opening ident.
+    note_starts = (0.20, 0.62, 1.12)
     for frame in range(frame_count):
         t = frame / sample_rate
         fade_in = min(1.0, t / 0.18)
         fade_out = min(1.0, max(0.0, CUE_DURATION_SECONDS - t) / 0.55)
         master = fade_in * fade_out
-        sample = 0.018 * math.sin(2 * math.pi * 110.0 * t)
-        sample += 0.012 * math.sin(2 * math.pi * 164.81 * t)
-        for frequency, start in zip(motif, note_starts):
+        pad_envelope = math.sin(math.pi * t / CUE_DURATION_SECONDS) ** 2
+        root = motif[0] / 2
+        sample = pad_envelope * (
+            0.018 * math.sin(2 * math.pi * root * t)
+            + 0.012 * math.sin(2 * math.pi * root * 1.5 * t)
+            + 0.008 * math.sin(2 * math.pi * root * 2 * t)
+        )
+        for index, (frequency, start) in enumerate(zip(motif, note_starts)):
             age = t - start
-            if 0 <= age <= 0.85:
-                envelope = math.sin(math.pi * age / 0.85) ** 1.4
-                sample += envelope * (
-                    0.075 * math.sin(2 * math.pi * frequency * age)
-                    + 0.018 * math.sin(2 * math.pi * frequency * 2 * age)
-                )
+            # Rounded mallet attack, gently decaying harmonics and two quiet
+            # echoes provide depth without harsh beeps, percussion or sirens.
+            duration = 2.3 if index == 2 else 1.3
+            for delay, gain in ((0.0, 1.0), (0.19, 0.20), (0.38, 0.09)):
+                echo_age = age - delay
+                if 0 <= echo_age <= duration:
+                    envelope = min(1.0, echo_age / 0.025) * math.exp(-2.6 * echo_age)
+                    envelope *= min(1.0, (duration - echo_age) / 0.12)
+                    sample += gain * envelope * (
+                        0.095 * math.sin(2 * math.pi * frequency * echo_age)
+                        + 0.022 * math.exp(-3 * echo_age) * math.sin(2 * math.pi * frequency * 2 * echo_age)
+                        + 0.009 * math.exp(-5 * echo_age) * math.sin(2 * math.pi * frequency * 3 * echo_age)
+                    )
         value = max(-1.0, min(1.0, sample * master))
         packed = struct.pack("<h", int(value * 32767))
         frames.extend(packed * channels)
@@ -150,13 +165,13 @@ def _insert_interludes(rendered: list[tuple[dict, Path]], workdir: Path) -> list
     inserted = set()
     for section, path in rendered:
         key = section["key"]
-        if key in AO_KEYS and key not in inserted:
+        if key in ("opening", *AO_KEYS) and key not in inserted:
             cue_path = workdir / f"cue-{key}.wav"
             _render_cue(cue_path, key, audio_params)
             result.append((section, cue_path))
             inserted.add(key)
         result.append((section, path))
-    if inserted != set(AO_KEYS):
+    if not set(AO_KEYS).issubset(inserted):
         raise ValueError("One or more AO musical cues could not be inserted")
     return result
 

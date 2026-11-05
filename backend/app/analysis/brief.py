@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+from urllib.parse import urlparse, quote
 from collections import Counter
 from datetime import datetime, timedelta
 
@@ -114,7 +115,9 @@ brief. Revise the supplied draft to resolve every fact-check concern. Preserve t
 required markdown structure and AO boundary. Remove or soften unsupported claims; do \
 not replace them with new claims. Use only the authorised source reporting. Return \
 only the complete revised brief, in English, with no preamble or editorial commentary. \
-Translate or paraphrase all non-English material; do not reproduce non-Latin text."""
+Translate or paraphrase all non-English material; do not reproduce non-Latin text.
+Retain or correct the exact [[article:ID]] references at the end of every key
+development bullet using only supporting IDs in the authorised material."""
 
 REQUIRED_SECTIONS = (
     "## 1. EXECUTIVE SUMMARY",
@@ -185,7 +188,7 @@ def _format_articles(articles) -> str:
     for article in articles:
         reliability = article.source.reliability if article.source else "unverified"
         lines.append(
-            f"- [{article.published_at.isoformat()}Z] ({article.category}, "
+            f"- [[article:{article.id}]] [{article.published_at.isoformat()}Z] ({article.category}, "
             f"sev {article.severity}, sigact={article.is_sigact}, "
             f"reliability={reliability}) {article.title} — "
             f"{(article.summary or '')[:280]}"
@@ -211,7 +214,10 @@ Use this exact markdown structure:
 <current operating picture and material change during the reporting period>
 
 ## 3. KEY DEVELOPMENTS
-- <prioritised developments, with confidence calibrated to source reliability>
+- <prioritised development, with confidence calibrated to source reliability> [[article:ID]]
+End EVERY development bullet with one or more exact [[article:ID]] references from
+the authorised material. Use only IDs supporting that particular development.
+Do not write source URLs yourself. Do not put citations in other sections.
 
 ## 4. ASSESSMENT
 <what the reporting means; clearly distinguish assessment from reported fact>
@@ -297,8 +303,40 @@ def _development_bullet(article: Article) -> str:
     )
     return (
         f"- **{title} ({confidence}):** "
-        f"{reported_detail}. {implication}"
+        f"{reported_detail}. {implication} {_source_link(article)}"
     )
+
+
+def _source_link(article) -> str:
+    name = getattr(getattr(article, "source", None), "name", None) or "Original article"
+    name = re.sub(r"[\[\]\\\r\n]", " ", name).strip()
+    url = getattr(article, "url", "") or ""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return f"Source: {name} (link unavailable)."
+    return f"Source: [{name}]({quote(url, safe=':/?&=%#@+;,~_-.$!')})."
+
+
+def _resolve_development_sources(content: str, articles) -> str:
+    """Resolve explicit model citations against the supplied records, never guessed URLs."""
+    start = content.index(REQUIRED_SECTIONS[2]) + len(REQUIRED_SECTIONS[2])
+    end = content.index(REQUIRED_SECTIONS[3], start)
+    section = content[start:end]
+    records = {str(article.id): article for article in articles}
+    bullets = re.split(r"(?m)(?=^\s*[-*] )", section)
+    for bullet in bullets:
+        if not re.match(r"\s*[-*] ", bullet):
+            continue
+        ids = re.findall(r"\[\[article:(\d+)\]\]", bullet)
+        if not ids or any(article_id not in records for article_id in ids):
+            raise ValueError("Key development has missing or invalid source references")
+    def resolve(match):
+        article = records.get(match.group(1))
+        if article is None:
+            raise ValueError("Unknown article citation")
+        return _source_link(article)
+    section = re.sub(r"\[\[article:(\d+)\]\]", resolve, section)
+    return content[:start] + section + content[end:]
 
 
 def _key_developments(articles: list[Article], limit: int = 5) -> list[str]:
@@ -532,6 +570,7 @@ def generate_ao_brief(db: Session, ao: str, run_fact_check: bool = None) -> Brie
                     + fact_check_notes
                 )
 
+    content = _resolve_development_sources(content, articles)
     brief = Brief(
         ao=ao,
         generated_at=datetime.utcnow(),

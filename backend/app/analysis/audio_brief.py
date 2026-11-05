@@ -476,11 +476,12 @@ def build_episode_script(
             _augment_short_chapters(script, materials, source_names)
             _validate_podcast_copy(script, materials, source_names)
 
-    sections = [{"key": "opening", "title": "Opening", "text": _clean_spoken_text(script["opening"])}]
+    opening = "Sentinel. Four regions. One clear picture. " + _clean_spoken_text(script["opening"])
+    sections = [{"key": "opening", "title": "Opening", "text": opening}]
     transcript_parts = [sections[0]["text"]]
     for ao in AO_ORDER:
         key, title = AO_AUDIO[ao]
-        chapter = _clean_spoken_text(script[key])
+        chapter = f"Sentinel. {title}. " + _clean_spoken_text(script[key])
         sections.append({"key": key, "title": title, "text": chapter})
         transcript_parts.append(f"{title.upper()}\n\n{chapter}")
     sections.append({"key": "closing", "title": "Closing", "text": _clean_spoken_text(script["closing"])})

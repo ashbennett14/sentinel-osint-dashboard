@@ -3,6 +3,7 @@ import pytest
 from types import SimpleNamespace
 
 from app.analysis.brief import _confidence_assessment, _validate_brief, REQUIRED_SECTIONS
+from app.analysis.brief import _resolve_development_sources, _source_link
 
 
 def _complete_brief(ao="AO_HIGH_NORTH"):
@@ -19,6 +20,23 @@ def _complete_brief(ao="AO_HIGH_NORTH"):
 
 def test_validate_brief_accepts_complete_single_ao_product():
     _validate_brief(_complete_brief(), "AO_HIGH_NORTH")
+
+
+def test_development_citations_resolve_only_supplied_article_records():
+    article = SimpleNamespace(id=42, url="https://example.org/story", source=SimpleNamespace(name="Example News"))
+    content = "## 3. KEY DEVELOPMENTS\n- **Border activity:** Details. [[article:42]]\n\n## 4. ASSESSMENT\nAnalysis."
+    result = _resolve_development_sources(content, [article])
+    assert "Source: [Example News](https://example.org/story)." in result
+    assert "[[article:" not in result
+    with pytest.raises(ValueError, match="missing or invalid"):
+        _resolve_development_sources(content.replace("42", "99"), [article])
+    with pytest.raises(ValueError, match="missing or invalid"):
+        _resolve_development_sources(content.replace("[[article:42]]", ""), [article])
+
+
+def test_source_link_rejects_non_web_schemes():
+    article = SimpleNamespace(url="javascript:alert(1)", source=SimpleNamespace(name="Example News"))
+    assert _source_link(article) == "Source: Example News (link unavailable)."
 
 
 def test_validate_brief_rejects_cross_ao_reference():
