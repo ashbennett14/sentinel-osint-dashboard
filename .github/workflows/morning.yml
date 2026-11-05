@@ -7,6 +7,9 @@ on:
     # and whether today's ready episode already exists, so these are idempotent
     # DST-safe production and recovery attempts.
     - cron: "17 4,5,6 * * *"
+  workflow_run:
+    workflows: ["Collect and classify"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       force:
@@ -25,7 +28,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  due:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COLLECTION_RESULT: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_run" ] && [ "$COLLECTION_RESULT" != "success" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          london_hour=$(TZ=Europe/London date +%H)
+          london_date=$(TZ=Europe/London date +%F)
+          if [ "$london_hour" -lt 5 ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          episode_date=$(curl -fsSL --retry 3 \
+            https://sentinel-osint-dashboard.vercel.app/api/audio-brief/latest \
+            | jq -r '.episode_date // empty' || true)
+          if [ "$episode_date" = "$london_date" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   morning:
+    needs: due
+    if: needs.due.outputs.run == 'true'
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -58,6 +99,8 @@ jobs:
           test -f "$KOKORO_MODEL_PATH" || curl -fL --retry 3 -o "$KOKORO_MODEL_PATH" https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.int8.onnx
           test -f "$KOKORO_VOICES_PATH" || curl -fL --retry 3 -o "$KOKORO_VOICES_PATH" https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/voices.bin
       - if: github.event_name == 'schedule'
+        run: python scripts/cloud_job.py morning
+      - if: github.event_name == 'workflow_run'
         run: python scripts/cloud_job.py morning
       - if: github.event_name == 'workflow_dispatch' && inputs.audio_only != true
         run: python scripts/cloud_job.py morning --force
