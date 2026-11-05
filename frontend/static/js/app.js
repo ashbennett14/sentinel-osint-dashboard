@@ -105,6 +105,7 @@ function plotSigActs(sigacts) {
       popup += `<div class="cluster-sources">Also reported by ${s.cluster_size - 1} other source(s): ${escapeHtml((s.also_reported_by || []).join(", "))}</div>`;
     }
     marker.bindPopup(popup);
+    marker.on("click", () => selectEvent(s.id, true));
     marker.addTo(markersLayer);
     markersById.set(s.id, marker);
     plotted.push(marker.getLatLng());
@@ -208,12 +209,13 @@ async function refreshSynopsis() {
     strategicEl.textContent = data.strategic || "—";
     operationalEl.textContent = data.operational || "—";
     tacticalEl.textContent = data.tactical || "—";
-    metaEl.textContent = `${data.source_article_count} sources · generated ${timeAgo(data.generated_at)}`;
+    showFreshness(metaEl, data.generated_at, 8);
   } catch (e) {
     strategicEl.textContent = "No synopsis generated yet for this AO/window.";
     operationalEl.textContent = "—";
     tacticalEl.textContent = "—";
-    metaEl.textContent = "";
+    metaEl.textContent = "Update unavailable";
+    metaEl.classList.add("is-stale");
   }
 }
 
@@ -243,7 +245,13 @@ async function refreshBrief(briefId) {
     el.innerHTML = window.DOMPurify
       ? DOMPurify.sanitize(rendered, { USE_PROFILES: { html: true } })
       : escapeHtml(currentBriefContent);
-    metaEl.textContent = `${data.source_article_count} sources · generated ${timeAgo(data.generated_at)}`;
+    el.querySelector("h1")?.remove();
+    const headings = [...el.querySelectorAll("h2")];
+    document.getElementById("briefNav").innerHTML = headings.map((heading, index) => {
+      heading.id = `brief-section-${index}`;
+      return `<a href="#${heading.id}">${escapeHtml(heading.textContent.replace(/^\d+[.)]\s*/, ""))}</a>`;
+    }).join("");
+    showFreshness(metaEl, data.generated_at, 30);
     if (data.fact_check_notes) {
       factText.textContent = data.fact_check_notes;
       factBox.classList.remove("hidden");
@@ -252,6 +260,8 @@ async function refreshBrief(briefId) {
     }
   } catch (e) {
     el.textContent = "No analyst brief generated yet — the first generation cycle runs shortly after startup.";
+    document.getElementById("briefNav").innerHTML = "";
+    metaEl.textContent = "Update unavailable";
     factBox.classList.add("hidden");
   }
 }
@@ -262,7 +272,7 @@ async function refreshBriefHistory() {
     const briefs = await fetchJson(`/api/briefs?ao=${state.ao}&limit=30`);
     const currentValue = select.value;
     select.innerHTML = `<option value="latest">Latest</option>` + briefs.map(
-      (b) => `<option value="${b.id}">${new Date(b.generated_at + "Z").toLocaleString()} (${b.source_article_count} sources)</option>`
+      (b) => `<option value="${b.id}">${utcDate(b.generated_at).toLocaleString()}</option>`
     ).join("");
     select.value = currentValue || "latest";
   } catch (e) {
@@ -298,6 +308,7 @@ async function refreshAudioBrief(episodeId) {
     currentAudioEpisode = data;
     title.textContent = data.title;
     meta.textContent = `${formatAudioTime(data.duration_seconds)} · Four regional chapters`;
+    meta.classList.toggle("is-stale", Date.now() - utcDate(data.generated_at).getTime() > 30 * 3600000);
     period.textContent = `${utcDate(data.period_start).toLocaleString()} to ${utcDate(data.period_end).toLocaleString()}`;
     transcript.textContent = data.transcript || "No transcript is available.";
     download.disabled = !data.audio_url;
@@ -319,6 +330,7 @@ async function refreshAudioBrief(episodeId) {
         player.play().catch(() => {});
       });
     });
+    updateAudioChapter();
   } catch (e) {
     currentAudioEpisode = null;
     title.textContent = "Awaiting first episode";
@@ -349,6 +361,30 @@ async function refreshAudioHistory() {
 }
 
 function wireAudioControls() {
+  const player = document.getElementById("audioPlayer");
+  const playButton = document.getElementById("audioPlayBtn");
+  const remember = (key, value) => { try { localStorage.setItem(key, value); } catch (_) {} };
+  const recall = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
+  playButton.addEventListener("click", () => {
+    if (!player.src) return;
+    if (player.paused) player.play().catch(() => {}); else player.pause();
+  });
+  player.addEventListener("play", () => { playButton.textContent = "Pause briefing"; });
+  player.addEventListener("pause", () => { playButton.textContent = "Play briefing"; });
+  player.addEventListener("loadedmetadata", () => {
+    const saved = Number(recall(`sentinel-audio-${currentAudioEpisode?.id}`));
+    if (saved > 0 && saved < player.duration - 5) player.currentTime = saved;
+    player.playbackRate = Number(document.getElementById("audioSpeed").value);
+  });
+  player.addEventListener("timeupdate", () => {
+    updateAudioChapter();
+    if (currentAudioEpisode) remember(`sentinel-audio-${currentAudioEpisode.id}`, String(player.currentTime));
+  });
+  document.getElementById("audioSpeed").value = recall("sentinel-speed") || "1";
+  document.getElementById("audioSpeed").addEventListener("change", (event) => {
+    player.playbackRate = Number(event.target.value);
+    remember("sentinel-speed", event.target.value);
+  });
   const history = document.getElementById("audioBriefHistory");
   const generate = document.getElementById("generateAudioBtn");
   const download = document.getElementById("downloadAudioBtn");
@@ -383,14 +419,18 @@ async function refreshHealth() {
   const systemState = document.getElementById("systemState");
   try {
     const data = await fetchJson(`/api/health`);
+    document.getElementById("healthDetails").innerHTML = (data.components || []).map((component) =>
+      `<div><strong>${escapeHtml({ingest:"Collection",synopsis:"Synopsis",brief:"Daily brief",audio:"Audio briefing"}[component.component] || component.component)}</strong><span>${component.last_success_at ? escapeHtml(timeAgo(component.last_success_at)) : "Awaiting update"}${component.last_error ? " · delayed" : ""}</span></div>`
+    ).join("");
     const ingest = (data.components || []).find((c) => c.component === "ingest");
     systemState.textContent = ingest && ingest.last_success_at
-      ? `Live · collected ${timeAgo(ingest.last_success_at)}`
-      : "Live · collection pending";
+      ? `Collected ${timeAgo(ingest.last_success_at)}`
+      : "Collection pending";
+    document.querySelector(".dot-live").classList.toggle("is-stale", !ingest?.last_success_at || Date.now() - utcDate(ingest.last_success_at).getTime() > 2 * 3600000);
     const problems = (data.components || []).filter((c) => c.last_error);
     if (problems.length) {
       banner.textContent = problems.map(
-        (c) => `⚠ ${c.component.toUpperCase()} generation failing${c.component === "audio" ? "" : ` (${data.llm_provider})`}: ${c.last_error}`
+        (c) => `${({ingest:"Collection",synopsis:"Synopsis",brief:"Daily brief",audio:"Audio briefing"}[c.component] || c.component)} update delayed. The last available product is shown.`
       ).join("   |   ");
       banner.classList.remove("hidden");
     } else {
@@ -413,7 +453,7 @@ function renderFeed(sigacts) {
   list.innerHTML = sigacts.map((s) => {
     const summary = (s.summary || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
     return `
-      <article class="feed-item ${s.severity >= 4 ? "feed-item-critical" : ""}">
+      <article data-event-id="${s.id}" class="feed-item ${s.severity >= 4 ? "feed-item-critical" : ""}">
         <div class="feed-item-topline">
           <span class="severity-pill severity-${s.severity}">SEV ${s.severity}</span>
           <span class="category-pill">${escapeHtml(formatCategory(s.category))}</span>
@@ -436,6 +476,7 @@ function renderFeed(sigacts) {
       if (!marker || !map) return;
       map.setView(marker.getLatLng(), Math.max(map.getZoom(), 7), { animate: true });
       marker.openPopup();
+      selectEvent(Number(button.dataset.id));
       document.getElementById("map").scrollIntoView({ behavior: "smooth", block: "center" });
     });
   });
@@ -687,6 +728,25 @@ function wireControls() {
 // Init
 // ---------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("periodControls").append(document.getElementById("windowToggle"));
+  const labels = ["High North", "Ukraine & Eastern Europe", "Balkans", "Levant"];
+  document.querySelectorAll(".ao-tab-label").forEach((label, index) => { label.textContent = labels[index]; });
+  document.querySelectorAll(".window-btn").forEach((button) => {
+    button.textContent = {"24h":"24 hours", "48h":"48 hours", "7d":"7 days", "30d":"30 days"}[button.dataset.window];
+  });
+  document.getElementById("resetMapBtn").addEventListener("click", () => map?.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]));
+  document.getElementById("expandMapBtn").addEventListener("click", (event) => {
+    const expanded = document.querySelector(".map-panel").classList.toggle("map-expanded");
+    event.currentTarget.textContent = expanded ? "Close expanded map" : "Expand map";
+    event.currentTarget.setAttribute("aria-pressed", String(expanded));
+    map?.invalidateSize();
+  });
+  document.getElementById("readingModeBtn").addEventListener("click", (event) => {
+    const reading = document.body.classList.toggle("reading-mode");
+    event.currentTarget.textContent = reading ? "Exit reading view" : "Reading view";
+    event.currentTarget.setAttribute("aria-pressed", String(reading));
+    document.getElementById("briefPanel").scrollIntoView({behavior:"smooth"});
+  });
   if (READ_ONLY) {
     ["collectBtn", "analysisBtn", "addSourceBtn", "addSourceForm", "generateAudioBtn"].forEach((id) => {
       document.getElementById(id)?.classList.add("hidden");
@@ -699,3 +759,28 @@ document.addEventListener("DOMContentLoaded", () => {
   refreshAll();
   setInterval(refreshAll, 60000); // poll every minute
 });
+
+function showFreshness(element, value, hours) {
+  const stale = !value || Date.now() - utcDate(value).getTime() > hours * 3600000;
+  element.textContent = `${stale ? "Previous update" : "Updated"} ${timeAgo(value)}`;
+  element.title = value ? utcDate(value).toLocaleString() : "No update available";
+  element.classList.toggle("is-stale", stale);
+}
+
+function selectEvent(id, scroll = false) {
+  document.querySelectorAll("[data-event-id]").forEach((item) => {
+    const selected = Number(item.dataset.eventId) === Number(id);
+    item.classList.toggle("selected-event", selected);
+    if (selected && scroll) item.scrollIntoView({behavior:"smooth", block:"nearest"});
+  });
+}
+
+function updateAudioChapter() {
+  const seconds = document.getElementById("audioPlayer").currentTime;
+  const chapter = [...(currentAudioEpisode?.chapters || [])].reverse().find((item) => seconds >= item.start_seconds);
+  document.querySelectorAll(".chapter-btn").forEach((button) => {
+    const active = chapter && Number(button.dataset.start) === chapter.start_seconds;
+    button.classList.toggle("active", !!active);
+    if (active) button.setAttribute("aria-current", "true"); else button.removeAttribute("aria-current");
+  });
+}

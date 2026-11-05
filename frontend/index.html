@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="static/css/dashboard.css?v=20260830-1">
+<link rel="stylesheet" href="static/css/dashboard.css?v=20261105-1">
 <style media="print">
   body * { visibility: hidden; }
   #briefContent, #briefContent *, #printLogo, #printLogo * { visibility: visible; }
@@ -54,10 +54,10 @@
   </div>
 
   <div class="status-cluster">
-    <div class="status-item">
+    <details class="health-details"><summary class="status-item">
       <span class="dot dot-live"></span>
       <span id="systemState" class="mono">Connecting…</span>
-    </div>
+    </summary><div id="healthDetails" class="health-popover">Checking updates…</div></details>
     <button id="collectBtn" class="btn-ghost btn-primary">Collect</button>
     <button id="analysisBtn" class="btn-ghost">Analyse</button>
     <button id="notifyBtn" class="btn-ghost">Alerts off</button>
@@ -94,11 +94,18 @@
   </div>
 </section>
 
+<div class="workspace-toolbar">
+  <div id="periodControls"><span class="toolbar-label">Reporting period</span></div>
+  <span class="toolbar-help">Applies to the synopsis, map and reporting</span>
+  <a href="#briefPanel">Read daily brief ↓</a>
+</div>
+
 <main class="layout">
 
   <section class="panel map-panel">
     <div class="panel-head">
-      <h2>SIGACT map</h2>
+      <h2>Regional activity</h2>
+      <div class="map-actions"><button id="resetMapBtn" class="btn-ghost">Reset map</button><button id="expandMapBtn" class="btn-ghost" aria-pressed="false">Expand map</button></div>
       <div class="window-toggle" id="windowToggle">
         <button class="window-btn active" data-window="24h">24H</button>
         <button class="window-btn" data-window="48h">48H</button>
@@ -202,7 +209,7 @@
   <section class="panel audio-panel" aria-labelledby="audioBriefTitle">
     <div class="panel-head audio-head">
       <div>
-        <h2 id="audioBriefTitle">Morning audio briefing</h2>
+        <h2 id="audioBriefTitle">The morning briefing</h2>
         <span id="audioBriefMeta" class="meta mono">Daily four-AO update · ready by 07:00</span>
       </div>
       <div class="audio-controls">
@@ -222,6 +229,7 @@
           <span id="audioPeriod" class="meta">The daily episode covers all four Areas of Operation.</span>
         </div>
         <audio id="audioPlayer" controls preload="metadata" aria-label="Morning audio intelligence briefing"></audio>
+        <div class="playback-controls"><button id="audioPlayBtn" class="btn-ghost btn-primary">Play briefing</button><label for="audioSpeed">Speed</label><select id="audioSpeed" class="text-input"><option value="1">1×</option><option value="1.15">1.15×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select><span>All four regions · independent of selected AO</span></div>
         <div id="audioChapters" class="audio-chapters" aria-label="Episode chapters"></div>
       </div>
       <details id="audioTranscriptDetails" class="audio-transcript">
@@ -231,22 +239,25 @@
     </div>
   </section>
 
-  <section class="panel brief-panel">
+  <section class="panel brief-panel" id="briefPanel">
     <div class="panel-head">
       <h2 id="briefTitle">AO High North daily analyst brief</h2>
       <div class="brief-controls">
         <select id="briefHistory" class="text-input"><option value="latest">Latest</option></select>
         <button id="downloadBriefBtn" class="btn-ghost">Download</button>
         <button id="printBriefBtn" class="btn-ghost">Print / PDF</button>
+        <button id="readingModeBtn" class="btn-ghost" aria-pressed="false">Reading view</button>
         <span id="briefMeta" class="meta mono"></span>
       </div>
     </div>
     <div id="printLogo" class="print-only"><img src="static/img/sentinel-wordmark.png" alt="SENTINEL"></div>
+    <p class="brief-period-note">Daily assessment · its own publication date and reporting period are shown below.</p>
+    <nav id="briefNav" class="brief-nav" aria-label="Brief sections"></nav>
     <div id="briefContent" class="brief-content">Awaiting first brief generation cycle…</div>
-    <div id="factCheckBox" class="fact-check-box hidden">
+    <details id="factCheckBox" class="fact-check-box hidden"><summary>Editorial review details</summary>
       <div class="tier-label">FACT-CHECK PASS (SECOND MODEL REVIEW)</div>
       <p id="factCheckText" class="tier-text"></p>
-    </div>
+    </details>
   </section>
 
 </main>
@@ -254,6 +265,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-<script src="static/js/app.js?v=20260830-1"></script>
+<script src="static/js/app.js?v=20261105-1"></script>
 </body>
 </html>
