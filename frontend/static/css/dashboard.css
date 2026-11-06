@@ -314,7 +314,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .window-toggle { padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); gap: 4px; }
 .window-btn { font-size: 13px; padding: 8px 13px; min-height: 36px; }
 .window-btn.active { background: #234047; color: #d7f5f7; }
-.layout { gap: 20px; grid-template-columns: minmax(0, 1.2fr) minmax(360px, 1fr); grid-template-areas: "audio audio" "synopsis map" "feed feed" "brief brief" "sources sources"; align-items: start; }
+.layout { gap: 20px; grid-template-columns: minmax(0, 1.2fr) minmax(360px, 1fr); grid-template-areas: "synopsis map" "feed feed" "audio audio" "brief brief" "sources sources"; align-items: start; }
 .panel { border-radius: 10px; }
 .panel-head { padding: 18px 22px; min-height: 64px; }
 .panel-head h2 { font-size: 17px; letter-spacing: -.015em; }
@@ -369,7 +369,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .reading-mode .layout { display: block; max-width: 1080px; padding-top: 24px; }
 #briefPanel { scroll-margin-top: 100px; }
 @media (max-width: 1120px) {
-  .layout { grid-template-columns: 1fr; grid-template-areas: "audio" "synopsis" "map" "feed" "brief" "sources"; }
+  .layout { grid-template-columns: 1fr; grid-template-areas: "synopsis" "map" "feed" "audio" "brief" "sources"; }
   .synopsis-panel { min-height: 0; }
   .topbar { grid-template-columns: 1fr auto; }
   .audio-player-wrap { grid-template-columns: 52px 1fr; }
@@ -462,7 +462,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .health-popover > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; }
 .health-popover span { color: var(--muted); }
 @media (max-width: 1120px) {
-  .layout { grid-template-areas: "audio" "synopsis" "map" "feed" "brief" "sources"; }
+  .layout { grid-template-areas: "synopsis" "map" "feed" "audio" "brief" "sources"; }
   .synopsis-panel { height: auto; }
   .feed-panel { height: auto; }
 }
