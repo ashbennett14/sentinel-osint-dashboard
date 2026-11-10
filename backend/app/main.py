@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.ao import VALID_AOS
+from app.changes import compare_reporting, event_evidence
 from app.database import get_db, init_db
 from app.models import Article, Source, Synopsis, Brief, AudioBrief, SystemStatus
 from app.schemas import (
@@ -66,7 +67,8 @@ async def response_headers(request: Request, call_next):
             request.url.path.startswith("/api/audio-brief")
             or request.url.path.startswith("/api/synopsis")
             or request.url.path.startswith("/api/brief")
-            or request.url.path == "/api/health"
+            or request.url.path.startswith("/api/events/")
+            or request.url.path in {"/api/health", "/api/changes"}
         ):
             # Analysis products are regenerated behind stable API URLs. Never
             # leave the dashboard showing a superseded product after a run.
@@ -153,6 +155,23 @@ def get_sigacts(
             item.also_reported_by = [o.source.name for o in others if o.source]
         out.append(item)
     return out
+
+
+@app.get("/api/changes")
+def get_changes(ao: str = Query(...), db: Session = Depends(get_db)):
+    if ao not in VALID_AOS:
+        raise HTTPException(400, "invalid AO")
+    return compare_reporting(db, ao, datetime.utcnow())
+
+
+@app.get("/api/events/{article_id}/evidence")
+def get_event_evidence(article_id: int, ao: str = Query(...), db: Session = Depends(get_db)):
+    if ao not in VALID_AOS:
+        raise HTTPException(400, "invalid AO")
+    result = event_evidence(db, ao, article_id, datetime.utcnow())
+    if result is None:
+        raise HTTPException(404, "This event is not available in the selected AO")
+    return result
 
 
 @app.get("/api/synopsis", response_model=SynopsisOut)

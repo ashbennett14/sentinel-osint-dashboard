@@ -46,6 +46,12 @@ osint-dashboard/
     └── static/js/app.js
 ```
 
+## Offline change-analysis evaluation
+
+Run `python scripts/evaluate_changes.py freeze sentinel.cloud-migration-final-20260809.db > backend/generated/changes-evaluation.json` (create the ignored `backend/generated` directory first). This reads the local migration backup without changing it. The six cases freeze evidence available by the archived brief cutoff; saved pipeline prose is included for the four regional cases. The two synthetic cases test quiet periods and repeated coverage. Each regional case has a manually selected reference development; the references are not an exhaustive inventory.
+
+Use the same evidence for both providers. Withhold the baseline and reference answers from model inputs. Review each output against the frozen records and record `developments` as a list of objects with `reference_id` (or null), `article_ids`, and `claims_supported` (true only when the cited articles support the wording). Rate `prose_score` from 0–4: one point each for clear British English, concise prioritisation, distinction between fact and assessment, and calibrated uncertainty. For archived prose, attach supporting IDs during review rather than treating implicit attribution as an original model citation. Run `python scripts/evaluate_changes.py score backend/generated/changes-evaluation.json AO_HIGH_NORTH review.json` to count coverage, misses, duplicates and unsupported citations. The harness does not call a model or claim a Sol result.
+
 ## Public cloud deployment
 
 SENTINEL supports a public, read-only deployment using Vercel, Supabase and

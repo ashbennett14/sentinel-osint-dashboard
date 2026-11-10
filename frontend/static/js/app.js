@@ -100,7 +100,7 @@ function plotSigActs(sigacts) {
     let popup =
       `<strong>${escapeHtml(s.title)}</strong><br>` +
       `<span style="font-family:monospace;font-size:11px">${s.category} · sev ${s.severity} · ${s.country || ""} · ${s.reliability || ""}</span><br>` +
-      `<a href="${safeUrl(s.url)}" target="_blank" rel="noopener">source ↗</a>`;
+      `<a href="${safeUrl(s.url)}" target="_blank" rel="noopener">source ↗</a><br>${evidenceButton(s.id)}`;
     if (s.cluster_size > 1) {
       popup += `<div class="cluster-sources">Also reported by ${s.cluster_size - 1} other source(s): ${escapeHtml((s.also_reported_by || []).join(", "))}</div>`;
     }
@@ -182,17 +182,21 @@ async function triggerJob(path, button, busyLabel, successLabel) {
   }
 }
 
+let sigactRequest = 0;
 async function refreshSigActs() {
+  const request = ++sigactRequest;
   try {
     const params = new URLSearchParams({ ao: state.ao, window: state.window });
     if (state.search) params.set("q", state.search);
     if (state.category) params.set("category", state.category);
     const data = await fetchJson(`/api/sigacts?${params.toString()}`);
+    if (request !== sigactRequest) return;
     plotSigActs(data);
     renderFeed(data);
     updateOverview(data);
     maybeNotify(data);
   } catch (e) {
+    if (request !== sigactRequest) return;
     console.warn("sigacts fetch failed", e);
     document.getElementById("feedList").innerHTML =
       `<div class="feed-item"><span class="feed-meta">Backend unreachable at ${API_BASE} — is it running?</span></div>`;
@@ -464,7 +468,8 @@ function renderFeed(sigacts) {
         <div class="feed-footer">
           <span>${escapeHtml(s.source_name || "Unknown source")}</span>
           <span>${escapeHtml(s.country || "Location unconfirmed")}</span>
-          ${s.cluster_size > 1 ? `<span>+${s.cluster_size - 1} corroborating source${s.cluster_size > 2 ? "s" : ""}</span>` : ""}
+          ${s.cluster_size > 1 ? `<span>+${s.cluster_size - 1} related article${s.cluster_size > 2 ? "s" : ""}</span>` : ""}
+          ${evidenceButton(s.id)}
           ${s.lat != null && s.lon != null ? `<button class="locate-btn" data-id="${s.id}">Locate</button>` : ""}
         </div>
       </article>`;
@@ -640,7 +645,10 @@ function wireBriefControls() {
 // UI wiring
 // ---------------------------------------------------------------------
 function refreshAll() {
-  refreshSigActs();
+  if (!document.getElementById("evidenceDrawer").open) {
+    refreshChanges();
+    refreshSigActs();
+  }
   refreshSynopsis();
   refreshBrief(document.getElementById("briefHistory").value);
   refreshBriefHistory();
@@ -659,6 +667,11 @@ function wireControls() {
       btn.setAttribute("aria-current", "page");
       btn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
       state.ao = btn.dataset.ao;
+      document.getElementById("evidenceDrawer").close();
+      markersLayer?.clearLayers();
+      markersById.clear();
+      document.getElementById("feedList").textContent = "Loading reporting…";
+      refreshChanges(true);
       document.getElementById("briefTitle").textContent = AO_META[state.ao].briefTitle;
       document.getElementById("briefHistory").value = "latest";
       if (map) map.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]);
@@ -722,6 +735,108 @@ function wireControls() {
   wireSourcesForm();
   wireBriefControls();
   wireAudioControls();
+  wireEvidence();
+}
+
+const ukTime = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  timeZone: "Europe/London", timeZoneName: "short",
+});
+const formatUkTime = (value) => ukTime.format(new Date(value));
+const evidenceButton = (id) => `<button type="button" class="btn-ghost evidence-trigger" data-evidence-id="${Number(id)}">View evidence</button>`;
+let changesRequest = 0;
+let evidenceRequest = 0;
+let evidenceTrigger = null;
+
+async function refreshChanges(reset = false) {
+  const ao = state.ao;
+  const request = ++changesRequest;
+  const list = document.getElementById("changesList");
+  const periods = document.getElementById("changesPeriods");
+  const status = document.getElementById("changesStatus");
+  const freshness = document.getElementById("changesFreshness");
+  if (reset) {
+    list.replaceChildren();
+    delete list.dataset.rendered;
+    periods.textContent = freshness.textContent = "";
+    status.textContent = "Checking recent reporting…";
+  }
+  try {
+    const data = await fetchJson(`/api/changes?ao=${encodeURIComponent(ao)}`);
+    if (request !== changesRequest || ao !== state.ao) return;
+    const range = (period) => `${formatUkTime(period.start)} to ${formatUkTime(period.end)}`;
+    periods.textContent = `Latest: ${range(data.current_period)} · Previous: ${range(data.previous_period)}`;
+    freshness.textContent = data.last_collected_at ? `Collected ${formatUkTime(data.last_collected_at)}` : "Collection time unavailable";
+    freshness.classList.toggle("is-stale", data.collection_state !== "current");
+    const message = data.collection_state === "current"
+      ? (data.items.length ? "Based on retained reporting. Follow-up coverage does not itself confirm a change." : "No qualifying reporting in the latest 24 hours.")
+      : (data.collection_state === "stale" ? "Collection is delayed. Recent reporting may be incomplete." : "Collection status is unavailable. This window may be incomplete.");
+    if (status.textContent !== message) status.textContent = message;
+    const focusedId = list.contains(document.activeElement) ? document.activeElement.dataset.evidenceId : null;
+    const markup = data.items.map(item => {
+      const label = item.kind === "new" ? "New to SENTINEL" : "Follow-up coverage";
+      const extra = item.added_publishers.length ? ` · Added publisher: ${item.added_publishers.join(", ")}` : "";
+      return `<li><div><span class="change-kind">${label}</span><h3 class="change-headline">${escapeHtml(item.title)}</h3><span class="meta">${escapeHtml(formatUkTime(item.published_at) + extra)}</span></div>${evidenceButton(item.article_id)}</li>`;
+    }).join("");
+    if (markup !== list.dataset.rendered) {
+      list.innerHTML = markup;
+      list.dataset.rendered = markup;
+      if (focusedId) (list.querySelector(`[data-evidence-id="${Number(focusedId)}"]`) || document.getElementById("changesTitle")).focus();
+    }
+  } catch (_) {
+    if (request !== changesRequest || ao !== state.ao) return;
+    list.replaceChildren();
+    delete list.dataset.rendered;
+    periods.textContent = freshness.textContent = "";
+    status.textContent = "The reporting comparison is unavailable. Try again shortly.";
+  }
+}
+
+async function openEvidence(trigger) {
+  const ao = state.ao;
+  const id = Number(trigger.dataset.evidenceId);
+  if (!Number.isSafeInteger(id) || id < 1) return;
+  const request = ++evidenceRequest;
+  const drawer = document.getElementById("evidenceDrawer");
+  const title = document.getElementById("evidenceEvent");
+  const status = document.getElementById("evidenceStatus");
+  const timeline = document.getElementById("evidenceTimeline");
+  const older = document.getElementById("evidenceOlder");
+  evidenceTrigger = trigger;
+  title.textContent = AO_META[ao].title;
+  status.textContent = "Loading evidence…";
+  older.textContent = "";
+  timeline.replaceChildren();
+  drawer.showModal();
+  drawer.querySelector(".evidence-body").scrollTop = 0;
+  try {
+    const data = await fetchJson(`/api/events/${id}/evidence?ao=${encodeURIComponent(ao)}`);
+    if (!drawer.open || request !== evidenceRequest || ao !== state.ao) return;
+    title.textContent = data.title;
+    status.textContent = "Related reporting, newest first. Repeated claims may come from the same underlying account.";
+    timeline.innerHTML = data.articles.map(article => {
+      const excerpt = article.excerpt.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      const url = safeUrl(article.url);
+      return `<li><div class="meta">${escapeHtml(article.publisher || "Publisher not listed")} · ${escapeHtml(formatUkTime(article.published_at))}</div><h4>${escapeHtml(article.title)}</h4>${excerpt ? `<p>${escapeHtml(excerpt)}</p>` : ""}${url !== "#" ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open original article ↗</a>` : ""}</li>`;
+    }).join("");
+    if (data.older_count) older.textContent = `${data.older_count} older related article(s) not shown.`;
+  } catch (_) {
+    if (!drawer.open || request !== evidenceRequest || ao !== state.ao) return;
+    status.textContent = "Evidence is unavailable. The event may have expired or moved out of this AO.";
+  }
+}
+
+function wireEvidence() {
+  document.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-evidence-id]");
+    if (trigger && !document.getElementById("evidenceDrawer").open) openEvidence(trigger);
+  });
+  document.getElementById("evidenceDrawer").addEventListener("close", () => {
+    evidenceRequest++;
+    const target = evidenceTrigger?.isConnected ? evidenceTrigger : document.getElementById("changesTitle");
+    target.focus();
+    evidenceTrigger = null;
+  });
 }
 
 // ---------------------------------------------------------------------
