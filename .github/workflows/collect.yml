@@ -2,7 +2,8 @@ name: Collect and classify
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    # Keep the half-hour cadence, away from GitHub's busiest hour boundary.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
 
 permissions:

@@ -1,8 +1,8 @@
-const IS_LOCAL = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
-const API_BASE = location.protocol === "file:"
-  ? "http://localhost:8000"
-  : (IS_LOCAL ? `${location.protocol}//${location.hostname}:8000` : "");
-let READ_ONLY = !IS_LOCAL;
+const IS_FILE = location.protocol === "file:";
+const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
+const API_BASE = IS_LOCAL ? `${location.protocol}//${location.hostname}:8000` : "";
+let READ_ONLY = true;
+if (IS_FILE) location.replace("https://sentinel-osint-dashboard.vercel.app/");
 
 const state = {
   ao: "AO_HIGH_NORTH",
@@ -198,8 +198,8 @@ async function refreshSigActs() {
   } catch (e) {
     if (request !== sigactRequest) return;
     console.warn("sigacts fetch failed", e);
-    document.getElementById("feedList").innerHTML =
-      `<div class="feed-item"><span class="feed-meta">Backend unreachable at ${API_BASE} — is it running?</span></div>`;
+    document.getElementById("feedCount").textContent = "Unavailable";
+    document.getElementById("feedList").textContent = "Latest reporting could not load. The dashboard will retry automatically.";
   }
 }
 
@@ -451,7 +451,7 @@ function renderFeed(sigacts) {
   const list = document.getElementById("feedList");
   document.getElementById("feedCount").textContent = `${sigacts.length} events`;
   if (!sigacts.length) {
-    list.innerHTML = `<div class="feed-item"><span class="feed-meta">No qualifying SIGACTs in this window.</span></div>`;
+    list.innerHTML = `<div class="feed-item"><span class="feed-meta">No qualifying events in this AO for the selected period. Try a longer reporting window.</span></div>`;
     return;
   }
   list.innerHTML = sigacts.map((s) => {
@@ -731,7 +731,7 @@ function wireControls() {
     refreshSigActs();
   });
 
-  wireNotifyButton();
+  if (!READ_ONLY) wireNotifyButton();
   wireSourcesForm();
   wireBriefControls();
   wireAudioControls();
@@ -842,7 +842,16 @@ function wireEvidence() {
 // ---------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+  if (IS_FILE) return;
+  if (IS_LOCAL) {
+    try {
+      const runtime = await fetchJson("/api/runtime-config", { signal: AbortSignal.timeout(3000) });
+      READ_ONLY = runtime.read_only !== false;
+    } catch (_) {
+      // Fail closed if local admin capability cannot be confirmed.
+    }
+  }
   document.getElementById("periodControls").append(document.getElementById("windowToggle"));
   const labels = ["High North", "Ukraine & Eastern Europe", "Balkans", "Levant"];
   document.querySelectorAll(".ao-tab-label").forEach((label, index) => { label.textContent = labels[index]; });
@@ -862,10 +871,13 @@ document.addEventListener("DOMContentLoaded", () => {
     event.currentTarget.setAttribute("aria-pressed", String(reading));
     document.getElementById("briefPanel").scrollIntoView({behavior:"smooth"});
   });
+  const manualControls = ["collectBtn", "analysisBtn", "notifyBtn"];
   if (READ_ONLY) {
-    ["collectBtn", "analysisBtn", "addSourceBtn", "addSourceForm", "generateAudioBtn"].forEach((id) => {
+    [...manualControls, "addSourceBtn", "addSourceForm", "generateAudioBtn"].forEach((id) => {
       document.getElementById(id)?.classList.add("hidden");
     });
+  } else {
+    manualControls.forEach((id) => document.getElementById(id)?.classList.remove("hidden"));
   }
   initMap();
   wireControls();
