@@ -16,9 +16,10 @@ from app.analysis.audio_brief import (
     _development_text,
     _chapter_text,
     _validate_podcast_copy,
-    _augment_short_chapters,
+    _fallback_chapter,
     _podcast_rewrite,
     audio_path_for,
+    build_episode_script,
     validate_episode_script,
 )
 from app.database import Base
@@ -75,10 +76,10 @@ class AudioBriefTests(unittest.TestCase):
 
     def test_script_validator_accepts_complete_target_length(self):
         sections = [
-            {"key": key, "text": "update " * 180}
+            {"key": key, "text": "update " * 80}
             for key in ("opening", "high-north", "eastern-europe", "balkans", "levant", "closing")
         ]
-        validate_episode_script(sections, "update " * 900)
+        validate_episode_script(sections, "update " * 480)
 
     def test_script_validator_rejects_wrong_chapter_order(self):
         sections = [
@@ -109,27 +110,25 @@ class AudioBriefTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "publisher"):
             _validate_podcast_copy(script, materials, ["Example News"])
 
-    def test_short_active_chapter_is_expanded_without_methodology(self):
-        script = {key: "A natural update." for key in (
-            "opening", "high-north", "eastern-europe", "balkans", "levant", "closing"
-        )}
-        materials = {}
-        for ao in AO_ORDER:
-            materials[ao] = {
-                "ao": ao,
-                "title": "Regional area",
-                "no_material_change": False,
-                "developments": [
-                    {"title": f"Military activity continued near the border sector number {i}.", "summary": ""}
-                    for i in range(4)
-                ],
-                "situation": "Tension remains elevated across several border districts.",
-                "assessment": "The activity may place additional pressure on neighbouring authorities.",
-                "outlook": "Further movement is possible during the next several days.",
-            }
-        _augment_short_chapters(script, materials, [])
-        self.assertGreater(len(script["high-north"].split()), 40)
-        self.assertNotIn("source", script["high-north"].lower())
+    def test_fallback_leads_with_facts_without_padding_from_written_brief(self):
+        material = {
+            "ao": "AO_BALKANS", "title": "The Balkans", "no_material_change": False,
+            "developments": [{"title": "Officials said a military exercise began in Serbia.", "summary": ""}],
+            "situation": "Tension remains elevated across several border districts.",
+            "assessment": "The activity may place additional pressure on neighbouring authorities.",
+            "outlook": "Further movement is possible during the next several days.",
+        }
+        self.assertEqual(_fallback_chapter(material, []), "The Balkans. Officials said a military exercise began in Serbia.")
+
+    def test_quiet_episode_keeps_all_regions_and_uses_one_ident(self):
+        with patch("app.analysis.audio_brief._articles_for_period", return_value=[]), patch(
+            "app.analysis.audio_brief.complete", side_effect=RuntimeError("offline")
+        ):
+            sections, transcript, _, _, article_count = build_episode_script(_Db([]), datetime(2026, 11, 11, 6))
+        self.assertEqual(article_count, 0)
+        self.assertEqual(transcript.count("Sentinel"), 1)
+        self.assertEqual(transcript.count("No material change."), 4)
+        self.assertEqual(sections[3]["text"], "The Balkans. No material change.")
 
     def test_podcast_rewrite_uses_one_model_call(self):
         keys = ("opening", "high-north", "eastern-europe", "balkans", "levant", "closing")
@@ -150,6 +149,15 @@ class AudioBriefTests(unittest.TestCase):
             script = _podcast_rewrite(materials, [], "Sunday, 9 August 2026")
         model.assert_called_once()
         self.assertEqual(script["balkans"], "The Balkans. No material change.")
+
+    def test_short_model_chapter_is_not_extended(self):
+        keys = ("opening", "high-north", "eastern-europe", "balkans", "levant", "closing")
+        response = dict.fromkeys(keys, "A short update for this region.")
+        materials = {ao: {"ao": ao, "title": ao, "no_material_change": False,
+                          "developments": [], "situation": "This should not be appended."} for ao in AO_ORDER}
+        with patch("app.analysis.audio_brief.complete", return_value=__import__("json").dumps(response)):
+            script = _podcast_rewrite(materials, [], "Wednesday, 11 November 2026")
+        self.assertEqual(script["high-north"], response["high-north"])
 
     def test_spoken_developments_do_not_name_sources(self):
         article = SimpleNamespace(

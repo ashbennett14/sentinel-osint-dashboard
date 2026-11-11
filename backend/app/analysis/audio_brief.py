@@ -42,16 +42,18 @@ RELIABILITY_ORDER = {
 
 PODCAST_KEYS = ("opening", "high-north", "eastern-europe", "balkans", "levant", "closing")
 PROHIBITED_SPOKEN_LANGUAGE = re.compile(
-    r"(?i)\b(?:reports?|reported|reporting|sources?|collection|corroborat\w*|"
-    r"confidence|severity|sigacts?|open[- ]source|distinct events?|monitoring|logged|dataset|"
-    r"said|says|stated|according to)\b"
+    r"(?i)\b(?:sources?|collection|corroborat\w*|confidence|severity|sigacts?|"
+    r"open[- ]source|distinct events?|dataset)\b"
 )
 PODCAST_SCHEMA = {
     "type": "object",
     "properties": {key: {"type": "string"} for key in PODCAST_KEYS},
     "required": list(PODCAST_KEYS),
 }
-PODCAST_SYSTEM_PROMPT = """You are the presenter of a concise British current-affairs and intelligence podcast. Write a warm, composed spoken update in clear British English. Discuss events directly, explain why they matter, and give a cautious near-term outlook. An active area with four or more supplied developments must receive 170 to 220 spoken words; an area with one to three developments may receive 70 to 130 words. Do not compress a well-covered area into a short summary. Never discuss how information was gathered or evaluated. Never use the words report, reports, reported, reporting, source, sources, collection, corroboration, confidence, severity, SIGACT, or open-source. Never name a publisher, broadcaster, agency used as a publisher, or reliability tier. Do not read counts, metadata, headings, bullet points, or methodological caveats aloud. Do not invent facts or add generic filler. Use natural transitions and varied sentences. Return only JSON matching the supplied schema."""
+PODCAST_SYSTEM_PROMPT = """Write a short British current-affairs briefing for the ear, not a written assessment.
+Lead with what happened: one or two concrete headlines in the opening, then in each regional chapter say what changed, why it matters and what to watch next, only where supported. Begin each regional chapter with a natural mention of the region. Use short, plain spoken sentences. Avoid jargon, generic scene-setting and repeated transitions. Do not read headings, counts, metadata or methodology aloud.
+Give consequential stories more time, usually up to 130 words per region. A quieter chapter can be a single sentence. There is no minimum length. Never pad the copy or lift sentences from written assessments. For an empty region use only its name followed by 'No material change.'
+Use only supplied facts. Separate confirmed developments, allegations and analysis; retain attribution to relevant officials or institutions when it matters to the claim. Do not name media publishers or discuss sourcing. Do not say the programme name or add a greeting: the producer adds the ident once. End with a brief sign-off. Return only JSON matching the supplied schema."""
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PROJECT_DIR = BACKEND_DIR.parent
@@ -68,8 +70,6 @@ def _clean_spoken_text(value: str) -> str:
     value = re.sub(r"^#{1,6}\s*", "", value, flags=re.MULTILINE)
     value = re.sub(r"^\s*[-*]\s+", "", value, flags=re.MULTILINE)
     value = value.replace("**", "").replace("__", "").replace("`", "")
-    value = re.sub(r"(?i)\b(?:officials?|he|she|they)\s+(?:said|stated)\s+(?:that\s+)?", "", value)
-    value = re.sub(r"(?i)\baccording to\s+[^,.]+,?\s*", "", value)
     for american, british in {
         "defense": "defence",
         "localized": "localised",
@@ -242,127 +242,44 @@ def _chapter_material(db: Session, ao: str, start: datetime, end: datetime) -> t
     return material, len(articles)
 
 
-def _fallback_chapter(material: dict, source_names: list[str]) -> str:
-    title = material["title"]
-    if material["no_material_change"]:
-        return f"{title}. No material change."
+def _fallback_developments(material: dict, source_names: list[str]) -> list[str]:
     developments = []
-    for item in material["developments"][:4]:
-        text = _safe_spoken_sentences(item.get("title", ""), source_names, 32)
+    for item in material["developments"]:
+        text = _safe_spoken_sentences(item.get("title", ""), source_names, 28)
         if material["ao"] == "AO_BALKANS" and re.search(r"(?i)\bUkraine\b", text):
-            summary = _safe_spoken_sentences(item.get("summary", ""), source_names, 45)
+            summary = _safe_spoken_sentences(item.get("summary", ""), source_names, 34)
             text = summary if re.search(
                 r"(?i)\b(?:Albania|Bosnia|Bulgaria|Croatia|Greece|Kosovo|Montenegro|"
                 r"North Macedonia|Serbia|Slovenia|Balkan|Adriatic)\b", summary
             ) else ""
         elif not text:
-            text = _safe_spoken_sentences(item.get("summary", ""), source_names, 45)
+            text = _safe_spoken_sentences(item.get("summary", ""), source_names, 34)
         if text:
-            developments.append(text.rstrip(".") + ".")
-    parts = [f"Now to {title}."]
-    situation = _safe_spoken_sentences(material.get("situation", ""), source_names, 75)
-    assessment = _safe_spoken_sentences(material.get("assessment", ""), source_names, 60)
-    outlook = _safe_spoken_sentences(material.get("outlook", ""), source_names, 55)
-    if situation:
-        parts.append(situation)
-    if developments:
-        parts.append(" ".join(developments))
-    if assessment:
-        parts.extend(("The key point is this.", assessment))
-    if outlook:
-        parts.extend(("Looking ahead.", outlook))
-    return _clip_words(" ".join(parts), 250)
+            developments.append(text.rstrip(".!?") + ".")
+        if len(developments) >= 2:
+            break
+    return developments
 
 
-def _fallback_script(materials: dict, source_names: list[str], local_day: str) -> dict:
+def _fallback_chapter(material: dict, source_names: list[str]) -> str:
+    title = material["title"]
+    if material["no_material_change"]:
+        return f"{title}. No material change."
+    developments = _fallback_developments(material, source_names)
+    return f"{title}. " + (" ".join(developments) or "No further detail for now.")
+
+
+def _fallback_script(materials: dict, source_names: list[str]) -> dict:
+    leads = [_fallback_developments(materials[ao], source_names) for ao in AO_ORDER]
+    headlines = [regional[0] for regional in leads if regional][:2]
     script = {
-        "opening": f"Good morning. This is Sentinel for {local_day}. Here is what matters across the four regions today.",
-        "closing": "That is the picture for this morning. We will return tomorrow with the next Sentinel update.",
+        "opening": " ".join(headlines) or "It has been a quiet day across the four regions.",
+        "closing": "That's the morning briefing. Thanks for listening.",
     }
     for ao in AO_ORDER:
         key, _ = AO_AUDIO[ao]
         script[key] = _fallback_chapter(materials[ao], source_names)
     return script
-
-
-def _script_from_transcript(transcript: str) -> dict | None:
-    """Recover today's last clean podcast script before using the mechanical fallback."""
-    parts = [part.strip() for part in (transcript or "").split("\n\n") if part.strip()]
-    if len(parts) < 10:
-        return None
-    def recover(value: str) -> str:
-        sentences = re.split(r"(?<=[.!?])\s+", value.strip())
-        safe = []
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence or re.search(r"(?i)https?://|\bt\.me/|<[^>]+>", sentence):
-                continue
-            if sentence[-1] not in ".!?" and len(sentences) > 1:
-                continue
-            safe.append(_clean_spoken_text(sentence))
-        return " ".join(safe)
-
-    script = {"opening": recover(parts[0]), "closing": recover(parts[-1])}
-    for ao in AO_ORDER:
-        key, title = AO_AUDIO[ao]
-        marker = title.upper()
-        try:
-            index = parts.index(marker)
-        except ValueError:
-            return None
-        if index + 1 >= len(parts):
-            return None
-        script[key] = recover(parts[index + 1])
-    return script
-
-
-def _sentence_similarity(left: str, right: str) -> float:
-    left_words = set(re.findall(r"[a-z]{4,}", left.lower()))
-    right_words = set(re.findall(r"[a-z]{4,}", right.lower()))
-    if not left_words or not right_words:
-        return 0.0
-    return len(left_words & right_words) / len(left_words | right_words)
-
-
-def _augment_short_chapters(script: dict, materials: dict, source_names: list[str]) -> None:
-    """Add clean factual context when a model chapter is too short for the episode target."""
-    for ao in AO_ORDER:
-        key, _ = AO_AUDIO[ao]
-        material = materials[ao]
-        if material["no_material_change"]:
-            continue
-        target = 180 if len(material["developments"]) >= 4 else 100
-        if len(script[key].split()) >= target:
-            continue
-        existing_sentences = re.split(r"(?<=[.!?])\s+", script[key].strip())
-        candidate_texts = [
-            material.get("situation", ""), material.get("assessment", ""), material.get("outlook", "")
-        ]
-        for item in material["developments"]:
-            candidate_texts.extend((item.get("title", ""), item.get("summary", "")))
-        candidates = []
-        for text in candidate_texts:
-            clean = _safe_spoken_sentences(text, source_names, 120)
-            candidates.extend(re.split(r"(?<=[.!?])\s+", clean))
-        additions = []
-        for candidate in candidates:
-            candidate = candidate.strip()
-            if not candidate or candidate.lower().startswith("now to "):
-                continue
-            if ao == "AO_BALKANS" and re.search(r"(?i)\bUkraine\b", candidate) and not re.search(
-                r"(?i)\b(?:Belgrade|Serbia|Balkan)\b", candidate
-            ):
-                continue
-            if any(_sentence_similarity(candidate, sentence) >= 0.45 for sentence in existing_sentences + additions):
-                continue
-            if candidate[-1] not in ".!?":
-                candidate += "."
-            additions.append(candidate)
-            if len((script[key] + " " + " ".join(additions)).split()) >= target:
-                break
-        if additions:
-            transition = "" if "a further point to note" in script[key].lower() else "A further point to note. "
-            script[key] = f"{script[key].rstrip()} {transition}{' '.join(additions)}"
 
 
 def _validate_podcast_copy(script: dict, materials: dict, source_names: list[str]) -> None:
@@ -380,6 +297,8 @@ def _validate_podcast_copy(script: dict, materials: dict, source_names: list[str
             raise ValueError(f"Podcast rewrite used behind-the-scenes language in {key}")
         if _contains_source_name(value, source_names):
             raise ValueError(f"Podcast rewrite named a publisher in {key}")
+        if re.search(r"(?i)(?:^|[.!?]\s+)(?:this is )?Sentinel[.!,:]", value):
+            raise ValueError(f"Podcast rewrite repeated the ident in {key}")
         script[key] = value
 
 
@@ -402,8 +321,8 @@ def _podcast_rewrite(materials: dict, source_names: list[str], local_day: str) -
     payload = {
         "date": local_day,
         "instructions": {
-            "opening": "One or two short sentences welcoming the listener.",
-            "active_chapter": "Use 170 to 220 spoken words when four or more developments are supplied: what happened, why it matters, and what may happen next.",
+            "opening": "One or two concrete headlines, up to 45 words. No greeting, date or programme name.",
+            "active_chapter": "Name the region, lead with one or two developments, explain why they matter, and offer a specific thing to watch if supported. Usually no more than 130 words. Never pad.",
             "quiet_chapter": "Use only the AO name followed by: No material change.",
             "closing": "One brief natural sign-off.",
         },
@@ -412,7 +331,7 @@ def _podcast_rewrite(materials: dict, source_names: list[str], local_day: str) -
     raw = complete(
         PODCAST_SYSTEM_PROMPT,
         json.dumps(payload, ensure_ascii=False),
-        max_tokens=5000,
+        max_tokens=3000,
         json_schema=PODCAST_SCHEMA,
         thinking_level="low",
     )
@@ -420,8 +339,8 @@ def _podcast_rewrite(materials: dict, source_names: list[str], local_day: str) -
     if isinstance(script, dict):
         for key in PODCAST_KEYS:
             if isinstance(script.get(key), str):
-                script[key] = _safe_spoken_sentences(script[key], source_names, 280)
-        _augment_short_chapters(script, materials, source_names)
+                limit = 45 if key == "opening" else 20 if key == "closing" else 145
+                script[key] = _safe_spoken_sentences(script[key], source_names, limit)
     _validate_podcast_copy(script, materials, source_names)
     return script
 
@@ -437,16 +356,12 @@ def build_episode_script(
     db: Session,
     period_end: datetime | None = None,
 ) -> tuple[list[dict], str, datetime, datetime, int]:
-    """Create source-faithful chapter text without an additional LLM call."""
+    """Create the news-first script with one rewrite call and a facts-only fallback."""
     period_end = period_end or datetime.utcnow()
     period_start = period_end - timedelta(hours=24)
     local_day = period_end.replace(tzinfo=ZoneInfo("UTC")).astimezone(
         ZoneInfo(settings.AUDIO_BRIEF_TIMEZONE)
     ).strftime("%A, %-d %B %Y")
-    local_episode_date = period_end.replace(tzinfo=ZoneInfo("UTC")).astimezone(
-        ZoneInfo(settings.AUDIO_BRIEF_TIMEZONE)
-    ).date().isoformat()
-
     source_names = _known_source_names(db)
     materials = {}
     total_sources = 0
@@ -456,32 +371,16 @@ def build_episode_script(
     try:
         script = _podcast_rewrite(materials, source_names, local_day)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Podcast rewrite unavailable; using clean deterministic fallback: %s", exc)
-        existing = (
-            db.query(AudioBrief)
-            .filter(AudioBrief.status == "ready", AudioBrief.episode_date == local_episode_date)
-            .order_by(AudioBrief.generated_at.desc())
-            .first()
-        )
-        script = _script_from_transcript(existing.transcript) if existing else None
-        if script:
-            try:
-                _augment_short_chapters(script, materials, source_names)
-                _validate_podcast_copy(script, materials, source_names)
-                logger.info("Reusing today's last clean podcast script before local expansion")
-            except Exception:  # noqa: BLE001
-                script = None
-        if not script:
-            script = _fallback_script(materials, source_names, local_day)
-            _augment_short_chapters(script, materials, source_names)
-            _validate_podcast_copy(script, materials, source_names)
+        logger.warning("Podcast rewrite unavailable; using current factual leads: %s", exc)
+        script = _fallback_script(materials, source_names)
+        _validate_podcast_copy(script, materials, source_names)
 
-    opening = "Sentinel. Four regions. One clear picture. " + _clean_spoken_text(script["opening"])
+    opening = f"This is Sentinel, with your morning briefing for {local_day}. " + script["opening"]
     sections = [{"key": "opening", "title": "Opening", "text": opening}]
     transcript_parts = [sections[0]["text"]]
     for ao in AO_ORDER:
         key, title = AO_AUDIO[ao]
-        chapter = f"Sentinel. {title}. " + _clean_spoken_text(script[key])
+        chapter = script[key]
         sections.append({"key": key, "title": title, "text": chapter})
         transcript_parts.append(f"{title.upper()}\n\n{chapter}")
     sections.append({"key": "closing", "title": "Closing", "text": _clean_spoken_text(script["closing"])})
@@ -499,11 +398,10 @@ def validate_episode_script(sections: list[dict], transcript: str) -> None:
         raise ValueError("Audio briefing contains untranslated non-English script")
     if PROHIBITED_SPOKEN_LANGUAGE.search(transcript or ""):
         raise ValueError("Audio briefing contains behind-the-scenes language")
-    words = len((transcript or "").split())
-    if words < 80:
-        raise ValueError("Audio briefing is too short for a complete morning product")
-    if words > 1250:
-        raise ValueError("Audio briefing exceeds the ten-minute script ceiling")
+    if any(not (section.get("text") or "").strip() for section in sections):
+        raise ValueError("Audio briefing contains an empty chapter")
+    if len((transcript or "").split()) > 700:
+        raise ValueError("Audio briefing exceeds the short-format script ceiling")
 
 
 def audio_path_for(episode: AudioBrief) -> Path | None:

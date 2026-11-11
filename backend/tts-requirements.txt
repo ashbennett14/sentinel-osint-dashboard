@@ -1,2 +1,3 @@
 # Separate Python 3.12 runtime used only for local speech synthesis.
 kokoro-mlx==0.1.2
+numpy>=1.26

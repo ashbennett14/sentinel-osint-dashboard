@@ -5,12 +5,44 @@ import tempfile
 import unittest
 import wave
 import struct
+import math
 
 
 WORKER_PATH = Path(__file__).resolve().parents[2] / "scripts" / "generate_audio.py"
 SPEC = importlib.util.spec_from_file_location("sentinel_audio_worker", WORKER_PATH)
 WORKER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(WORKER)
+
+
+@unittest.skipUnless(importlib.util.find_spec("numpy"), "studio mix needs the audio runtime")
+class StudioMixTests(unittest.TestCase):
+    def test_stereo_cues_and_chapter_boundaries(self):
+        score_path = WORKER_PATH.with_name("podcast_score.py")
+        spec = importlib.util.spec_from_file_location("sentinel_podcast_score", score_path)
+        score = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(score)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            voice = root / "voice.wav"
+            rate = 24000
+            with wave.open(str(voice), "wb") as stream:
+                stream.setparams((1, 2, rate, 0, "NONE", "not compressed"))
+                stream.writeframes(b"".join(struct.pack("<h", int(3500 * math.sin(i * .12))) for i in range(rate)))
+            keys = ("opening", *WORKER.AO_KEYS, "closing")
+            mixed = root / "studio.wav"
+            rendered = [({"key": key, "title": key}, voice) for key in keys]
+            chapters, duration = score.mix_episode(rendered, mixed)
+            self.assertEqual([entry["key"] for entry in chapters], list(keys))
+            self.assertEqual(chapters[0]["start_seconds"], 0)
+            self.assertGreater(chapters[1]["start_seconds"], 3.25)
+            self.assertGreater(duration - chapters[-1]["start_seconds"], 4.65)
+            with wave.open(str(mixed), "rb") as stream:
+                self.assertEqual(stream.getnchannels(), 2)
+                self.assertEqual(stream.getframerate(), rate)
+                frames = score.np.frombuffer(stream.readframes(stream.getnframes()), dtype="<i2").reshape(-1, 2)
+            self.assertTrue(score.np.any(frames[:, 0] != frames[:, 1]))
+            self.assertLess(score.np.abs(frames).max(), 31000)
+            self.assertNotEqual(score.cue(1, 2.9, rate).tobytes(), score.cue(2, 2.9, rate).tobytes())
 
 
 @unittest.skipUnless(shutil.which("say") and shutil.which("afconvert"), "macOS speech tools required")

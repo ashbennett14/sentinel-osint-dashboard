@@ -256,14 +256,22 @@ def main() -> int:
                 engine = f"macOS {args.fallback_voice} fallback"
                 rendered = _render_macos(sections, workdir, args.fallback_voice, args.fallback_rate)
 
-        rendered = _insert_interludes(rendered, workdir)
         combined = workdir / "combined.wav"
-        chapters, duration = _combine_wavs(rendered, combined)
+        try:
+            from podcast_score import mix_episode
+        except ModuleNotFoundError as exc:
+            if exc.name != "numpy":
+                raise
+            # Keep the optional bare macOS system-speech setup usable.
+            rendered = _insert_interludes(rendered, workdir)
+            chapters, duration = _combine_wavs(rendered, combined)
+        else:
+            chapters, duration = mix_episode(rendered, combined)
         converter = [
-            "/usr/bin/afconvert", str(combined), "-o", str(output), "-f", "m4af", "-d", "aac"
+            "/usr/bin/afconvert", str(combined), "-o", str(output), "-f", "m4af", "-d", "aac", "-b", "128000"
         ] if Path("/usr/bin/afconvert").is_file() else [
             shutil.which("ffmpeg") or "ffmpeg", "-y", "-i", str(combined),
-            "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(output),
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output),
         ]
         subprocess.run(
             converter,
