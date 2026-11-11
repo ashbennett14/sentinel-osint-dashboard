@@ -1,11 +1,12 @@
 {
-  "name": "SENTINEL — Open-Source Fusion Watch",
+  "name": "SENTINEL — Open-source intelligence",
   "short_name": "SENTINEL",
   "icons": [
     { "src": "static/img/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "static/img/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "static/img/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "static/img/compass-watch.svg", "sizes": "any", "type": "image/svg+xml" }
   ],
-  "theme_color": "#0a0d10",
-  "background_color": "#0a0d10",
+  "theme_color": "#101820",
+  "background_color": "#101820",
   "display": "standalone"
 }

@@ -29,8 +29,8 @@ const AO_CENTER = {
 const AO_ZOOM = { AO_HIGH_NORTH: 4, AO_EUROPE: 4, AO_BALKANS: 5, AO_LEVANT: 6 };
 const AO_META = {
   AO_HIGH_NORTH: {
-    title: "High North Watch",
-    description: "High North, Finland and the Baltic states · Hybrid, infrastructure and regional security activity",
+    title: "High North, Finland & the Baltics",
+    description: "Arctic, Nordic and Baltic security · Infrastructure, military posture and regional activity",
     briefTitle: "AO High North daily analyst brief",
     slug: "high-north",
   },
@@ -47,7 +47,7 @@ const AO_META = {
     slug: "balkans",
   },
   AO_LEVANT: {
-    title: "Levant Watch",
+    title: "The Levant",
     description: "Lebanon, Jordan and the broader Middle East · State, proxy and cross-border activity",
     briefTitle: "AO Levant daily analyst brief",
     slug: "levant",
@@ -73,6 +73,10 @@ function initMap() {
     maxZoom: 18,
   }).addTo(map);
   markersLayer = L.layerGroup().addTo(map);
+  if (window.ResizeObserver) {
+    const mapResize = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+    mapResize.observe(map.getContainer());
+  }
 }
 
 function sevColor(sev) {
@@ -139,6 +143,16 @@ function updateAoHeader() {
   document.getElementById("aoTitle").textContent = meta.title;
   document.getElementById("aoDescription").textContent = meta.description;
   document.getElementById("kpiWindow").textContent = WINDOW_LABELS[state.window];
+}
+
+function syncSynopsisToggle() {
+  const panel = document.querySelector(".synopsis-panel");
+  const body = panel.querySelector(".synopsis-body");
+  const button = document.getElementById("expandSynopsisBtn");
+  const expanded = panel.classList.contains("synopsis-expanded");
+  button.classList.toggle("hidden", !expanded && body.scrollHeight <= body.clientHeight + 1);
+  button.setAttribute("aria-expanded", String(expanded));
+  button.textContent = expanded ? "Show compact synopsis" : "Read full synopsis";
 }
 
 function updateOverview(sigacts) {
@@ -215,6 +229,7 @@ async function refreshSynopsis() {
     operationalEl.textContent = data.operational || "—";
     tacticalEl.textContent = data.tactical || "—";
     showFreshness(metaEl, data.generated_at, 8);
+    syncSynopsisToggle();
   } catch (e) {
     if (request !== synopsisRequest) return;
     strategicEl.textContent = "No synopsis generated yet for this AO/window.";
@@ -222,6 +237,7 @@ async function refreshSynopsis() {
     tacticalEl.textContent = "—";
     metaEl.textContent = "Update unavailable";
     metaEl.classList.add("is-stale");
+    syncSynopsisToggle();
   }
 }
 
@@ -349,7 +365,7 @@ async function refreshAudioBrief(episodeId) {
     currentAudioEpisode = null;
     title.textContent = "Awaiting first episode";
     meta.textContent = "Daily four-AO update · ready by 07:00";
-    period.textContent = "Generate the first episode now, or leave SENTINEL running for the morning schedule.";
+    period.textContent = READ_ONLY ? "No episode is available right now. New episodes are published automatically." : "Generate the first episode now, or leave SENTINEL running for the morning schedule.";
     transcript.textContent = "No transcript is available yet.";
     chapters.innerHTML = "";
     download.disabled = true;
@@ -852,12 +868,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Fail closed if local admin capability cannot be confirmed.
     }
   }
-  document.getElementById("periodControls").append(document.getElementById("windowToggle"));
-  const labels = ["High North", "Ukraine & Eastern Europe", "Balkans", "Levant"];
-  document.querySelectorAll(".ao-tab-label").forEach((label, index) => { label.textContent = labels[index]; });
-  document.querySelectorAll(".window-btn").forEach((button) => {
-    button.textContent = {"24h":"24 hours", "48h":"48 hours", "7d":"7 days", "30d":"30 days"}[button.dataset.window];
+  document.getElementById("expandSynopsisBtn").addEventListener("click", () => {
+    const panel = document.querySelector(".synopsis-panel");
+    panel.classList.toggle("synopsis-expanded");
+    syncSynopsisToggle();
+    if (!panel.classList.contains("synopsis-expanded")) panel.scrollIntoView({ block: "start" });
   });
+  window.addEventListener("resize", syncSynopsisToggle);
   document.getElementById("resetMapBtn").addEventListener("click", () => map?.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]));
   document.getElementById("expandMapBtn").addEventListener("click", (event) => {
     const expanded = document.querySelector(".map-panel").classList.toggle("map-expanded");
@@ -877,7 +894,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById(id)?.classList.add("hidden");
     });
   } else {
-    manualControls.forEach((id) => document.getElementById(id)?.classList.remove("hidden"));
+    [...manualControls, "addSourceBtn", "generateAudioBtn"].forEach((id) => document.getElementById(id)?.classList.remove("hidden"));
   }
   readView();
   initMap();
