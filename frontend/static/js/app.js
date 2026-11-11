@@ -41,25 +41,25 @@ const AO_META = {
   AO_HIGH_NORTH: {
     title: "High North, Finland & the Baltics",
     description: "Arctic, Nordic and Baltic security · Infrastructure, military posture and regional activity",
-    briefTitle: "AO High North daily analyst brief",
+    briefTitle: "AO High North Daily Analyst Brief",
     slug: "high-north",
   },
   AO_EUROPE: {
     title: "Ukraine & Eastern Europe",
     description: "Ukraine and eastern / central Europe · Conflict, regional security and spillover activity",
-    briefTitle: "AO Ukraine & Eastern Europe daily analyst brief",
+    briefTitle: "AO Ukraine & Eastern Europe Daily Analyst Brief",
     slug: "eastern-europe",
   },
   AO_BALKANS: {
     title: "The Balkans",
     description: "Western Balkans, Greece and Bulgaria · Stability, security posture and regional influence",
-    briefTitle: "AO Balkans daily analyst brief",
+    briefTitle: "AO Balkans Daily Analyst Brief",
     slug: "balkans",
   },
   AO_LEVANT: {
     title: "The Levant",
     description: "Lebanon, Jordan and the broader Middle East · State, proxy and cross-border activity",
-    briefTitle: "AO Levant daily analyst brief",
+    briefTitle: "AO Levant Daily Analyst Brief",
     slug: "levant",
   },
 };
@@ -540,7 +540,7 @@ async function refreshHealth() {
 
 function renderFeed(sigacts) {
   const list = document.getElementById("feedList");
-  const expanded = new Set([...list.querySelectorAll(".feed-details[open]")].map(details => details.closest("[data-event-id]").dataset.eventId));
+  const expanded = new Set([...list.querySelectorAll('.feed-details-toggle[aria-expanded="true"]')].map(toggle => toggle.closest("[data-event-id]").dataset.eventId));
   document.getElementById("feedCount").textContent = `${sigacts.length} event${sigacts.length === 1 ? "" : "s"}${timelineIsLive() ? "" : " · replay"}`;
   if (!sigacts.length) {
     list.innerHTML = `<div class="feed-item"><span class="feed-meta">${timelineIsLive() ? "No qualifying events for the selected AO, period and filters." : "No loaded reports were published by this point in the replay."}</span></div>`;
@@ -548,15 +548,15 @@ function renderFeed(sigacts) {
   }
   list.innerHTML = sigacts.map((s) => {
     const summary = (s.summary || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    const open = expanded.has(String(s.id));
     return `
       <article data-event-id="${s.id}" class="feed-item ${s.severity >= 4 ? "feed-item-critical" : ""}">
         <svg class="feed-document" aria-hidden="true" width="20" height="22" viewBox="0 0 20 22" fill="none" stroke="currentColor"><path d="M4 1.5h8l5 5v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-17a1 1 0 0 1 1-1Z"/><path d="M12 2v5h5M6 10h8M6 13h8M6 16h6"/></svg>
         <a class="feed-title" href="${safeUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.title)}</a>
         ${summary ? `<p class="feed-summary">${escapeHtml(summary.slice(0, 180))}${summary.length > 180 ? "…" : ""}</p>` : ""}
         <time class="feed-time" title="${formatUkTime(s.published_at)}">${timeAgo(s.published_at)}</time>
-        <details class="feed-details"${expanded.has(String(s.id)) ? " open" : ""}>
-        <summary aria-label="Details for this report" title="Report details">⋯</summary>
-        <div class="feed-footer">
+        <button class="feed-details-toggle" type="button" aria-label="Details for this report" title="Report Details" aria-expanded="${open}" aria-controls="feed-details-${s.id}">⋯</button>
+        <div class="feed-footer" id="feed-details-${s.id}"${open ? "" : " hidden"}>
           <span class="severity-pill severity-${s.severity}">SEV ${s.severity}</span>
           <span class="category-pill">${escapeHtml(formatCategory(s.category))}</span>
           <span>${escapeHtml(s.source_name || "Unknown source")}</span>
@@ -566,9 +566,16 @@ function renderFeed(sigacts) {
           ${followButton(s.id)}
           ${s.lat != null && s.lon != null ? `<button class="locate-btn" data-id="${s.id}">Locate</button>` : ""}
         </div>
-        </details>
       </article>`;
   }).join("");
+
+  list.querySelectorAll(".feed-details-toggle").forEach(button => {
+    button.addEventListener("click", () => {
+      const open = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", String(!open));
+      document.getElementById(button.getAttribute("aria-controls")).hidden = open;
+    });
+  });
 
   list.querySelectorAll(".locate-btn").forEach((button) => {
     button.addEventListener("click", () => {

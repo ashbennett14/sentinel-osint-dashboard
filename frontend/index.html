@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="static/css/dashboard.css?v=20261111-3">
-<link rel="stylesheet" href="static/css/compass-watch.css?v=5">
+<link rel="stylesheet" href="static/css/compass-watch.css?v=6">
 <style media="print">
   body * { visibility: hidden; }
   #briefContent, #briefContent *, #printLogo, #printLogo * { visibility: visible; }
@@ -111,13 +111,13 @@
   <div class="map-column">
   <section class="panel map-panel">
     <div class="panel-head">
-      <h2>Regional activity</h2>
+      <h2>Regional Activity</h2>
       <div class="map-actions"><button id="mapLabelsBtn" class="btn-ghost" type="button" aria-pressed="false">Street map</button><button id="resetMapBtn" class="btn-ghost">Reset map</button><button id="expandMapBtn" class="btn-ghost" aria-pressed="false">Expand map</button></div>
     </div>
     <div id="map"></div>
     <img class="map-watermark" src="static/img/compass-watch.svg" alt="">
     <details class="timeline-controls" id="mapTimeline">
-      <summary>Publication timeline</summary>
+      <summary>Publication Timeline</summary>
       <p class="meta">Replay the loaded reports by publication time, not when events occurred.</p>
       <label for="timelinePosition" id="timelineLabel">Latest reporting</label>
       <input id="timelinePosition" type="range" min="0" max="1000" value="1000" disabled>
@@ -134,7 +134,7 @@
 
   <section class="panel synopsis-panel">
     <div class="panel-head">
-      <h2 id="synopsisTitle">Situation synopsis</h2>
+      <h2 id="synopsisTitle">Situation Synopsis</h2>
       <span id="synopsisMeta" class="meta mono"></span>
     </div>
     <div class="synopsis-body">
@@ -155,7 +155,7 @@
 
   <section class="panel feed-panel">
     <div class="panel-head">
-      <h2 id="reportingTitle" tabindex="-1">Latest reporting</h2>
+      <h2 id="reportingTitle" tabindex="-1">Latest Reporting</h2>
       <div class="reporting-head-meta">
         <span id="reportingFreshness" class="meta" role="status">Checking collection freshness…</span>
         <span id="feedCount" class="meta mono" aria-live="polite">Loading…</span>
@@ -163,7 +163,7 @@
     </div>
     <div class="reporting-tools">
     <details class="reporting-filters">
-      <summary>Filter reporting</summary>
+      <summary>Filter Reporting</summary>
     <div class="feed-filters">
       <input id="feedSearch" type="text" maxlength="160" aria-label="Search reporting" placeholder="Search title/summary…" class="text-input">
       <select id="feedCategoryFilter" class="text-input">
@@ -196,7 +196,7 @@
       <div class="audio-heading">
         <div class="audio-cover"><img src="static/img/compass-watch.svg" alt="" width="44" height="44"></div>
         <div>
-          <h2 id="audioBriefTitle">The morning briefing</h2>
+          <h2 id="audioBriefTitle">The Morning Briefing</h2>
           <span id="audioBriefMeta" class="meta mono">Daily four-AO update · ready by 07:00</span>
         </div>
       </div>
@@ -210,7 +210,7 @@
       <audio id="audioPlayer" controls preload="metadata" aria-label="Morning audio intelligence briefing"></audio>
     </div>
     <details class="audio-options">
-      <summary>Chapters, episodes &amp; transcript</summary>
+      <summary>Chapters, Episodes &amp; Transcript</summary>
       <div class="audio-options-body">
       <div class="audio-controls">
         <select id="audioBriefHistory" class="text-input" aria-label="Audio briefing history">
@@ -227,7 +227,7 @@
         <div class="playback-controls"><label for="audioSpeed">Speed</label><select id="audioSpeed" class="text-input"><option value="1">1×</option><option value="1.15">1.15×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select><span>All four regions · independent of selected AO</span></div>
         <div id="audioChapters" class="audio-chapters" aria-label="Episode chapters"></div>
       <details id="audioTranscriptDetails" class="audio-transcript">
-        <summary>Read transcript</summary>
+        <summary>Read Transcript</summary>
         <div id="audioTranscript" class="audio-transcript-copy">No transcript is available yet.</div>
       </details>
       </div>
@@ -236,7 +236,7 @@
 
   <section class="panel brief-panel" id="briefPanel">
     <div class="panel-head">
-      <h2 id="briefTitle">AO High North daily analyst brief</h2>
+      <h2 id="briefTitle">AO High North Daily Analyst Brief</h2>
       <div class="brief-controls">
         <select id="briefHistory" class="text-input"><option value="latest">Latest</option></select>
         <button id="downloadBriefBtn" class="btn-ghost">Download</button>
@@ -249,7 +249,7 @@
     <p class="brief-period-note">Daily assessment · its own publication date and reporting period are shown below.</p>
     <nav id="briefNav" class="brief-nav" aria-label="Brief sections"></nav>
     <div id="briefContent" class="brief-content">Awaiting first brief generation cycle…</div>
-    <details id="factCheckBox" class="fact-check-box hidden"><summary>Editorial review details</summary>
+    <details id="factCheckBox" class="fact-check-box hidden"><summary>Editorial Review Details</summary>
       <div class="tier-label">FACT-CHECK PASS (SECOND MODEL REVIEW)</div>
       <p id="factCheckText" class="tier-text"></p>
     </details>
@@ -301,7 +301,7 @@
 
 <dialog id="evidenceDrawer" class="evidence-drawer" aria-labelledby="evidenceTitle">
   <header class="panel-head">
-    <h2 id="evidenceTitle">Event evidence</h2>
+    <h2 id="evidenceTitle">Event Evidence</h2>
     <form method="dialog"><button class="btn-ghost" autofocus>Close</button></form>
   </header>
   <div class="evidence-body">
@@ -315,7 +315,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-<script src="static/js/app.js?v=20261111-6"></script>
+<script src="static/js/app.js?v=20261111-7"></script>
 <script src="static/js/reporting-tools.js?v=20261111-2"></script>
 </body>
 </html>
