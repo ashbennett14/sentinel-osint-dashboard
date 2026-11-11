@@ -116,12 +116,28 @@ function initMap() {
   }
 }
 
-function sevColor(sev) {
-  if (sev >= 5) return "#d22c29";
-  if (sev === 4) return "#d9a441";
-  if (sev === 3) return "#5aa5bf";
-  if (sev === 2) return "#c98a4f";
-  return "#7c8890";
+const MAP_EVENT_GLYPHS = {
+  airspace_incursion: '<path d="M12 3v18m-4-1 4-3 4 3M4 14l8-5 8 5"/>',
+  electronic_warfare: '<path d="M12 13v8M8 21h8M8 6a6 6 0 0 0 0 8m8-8a6 6 0 0 1 0 8"/><circle cx="12" cy="10" r="2"/>',
+  cyber_attack: '<rect x="4" y="5" width="16" height="13" rx="2"/><path d="m8 9 3 2.5L8 14m5 0h3M9 21h6"/>',
+  sabotage: '<path d="M7 4v4m-3 0h8v2a4 4 0 0 1-4 4H6l-2 3m13 3v-4m-5 0h8v-2a4 4 0 0 0-4-4h-1"/>',
+  kinetic_strike: '<path d="m13 3-8 11h6l-1 7 9-11h-6z"/>',
+  bombing: '<path d="m12 3 2.2 5 5.3-2-2 5.3L22 14l-5.4 1.3L16 21l-4-3.5L8 21l-.6-5.7L2 14l4.5-2.7-2-5.3 5.3 2z"/>',
+  civil_unrest: '<path d="M3 19v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2m2-6a4 4 0 0 1 4 4v2"/><circle cx="9" cy="8" r="3"/><path d="M16 5a3 3 0 0 1 0 6"/>',
+  security_operation: '<path d="M12 3 5 6v5c0 4 2.5 7.5 7 10 4.5-2.5 7-6 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/>',
+  exercise: '<path d="M5 21V4m0 1h13l-3 4 3 4H5"/>',
+  espionage: '<path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>',
+};
+const MAP_DEFAULT_GLYPH = '<path d="M6 4h9l3 3v13H6zM9 10h6m-6 4h6"/>';
+
+function eventMapIcon(event) {
+  const severity = Math.min(5, Math.max(1, Math.round(Number(event.severity) || 1)));
+  const glyph = Object.hasOwn(MAP_EVENT_GLYPHS, event.category) ? MAP_EVENT_GLYPHS[event.category] : MAP_DEFAULT_GLYPH;
+  return L.divIcon({
+    className: `event-map-icon event-map-severity-${severity}`,
+    html: `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg>`,
+    iconSize: [24, 24], iconAnchor: [12, 12], popupAnchor: [0, -13],
+  });
 }
 
 function plotSigActs(sigacts, fit = true) {
@@ -131,12 +147,10 @@ function plotSigActs(sigacts, fit = true) {
   const plotted = [];
   sigacts.forEach((s) => {
     if (s.lat == null || s.lon == null) return;
-    const marker = L.circleMarker([s.lat, s.lon], {
-      radius: 5 + s.severity,
-      color: sevColor(s.severity),
-      fillColor: sevColor(s.severity),
-      fillOpacity: 0.6,
-      weight: 1.5,
+    const marker = L.marker([s.lat, s.lon], {
+      icon: eventMapIcon(s),
+      title: s.title,
+      zIndexOffset: Math.max(0, Number(s.severity) || 0) * 250,
     });
     let popup =
       `<strong>${escapeHtml(s.title)}</strong><br>` +
@@ -934,7 +948,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const expandMapButton = document.getElementById("expandMapBtn");
   const setMapExpanded = (expanded) => {
     mapPanel.classList.toggle("map-expanded", expanded);
-    expandMapButton.textContent = expanded ? "Close expanded map" : "Expand map";
+    const label = expanded ? "Close expanded map" : "Expand map";
+    expandMapButton.setAttribute("aria-label", label);
+    expandMapButton.title = label;
     expandMapButton.setAttribute("aria-pressed", String(expanded));
     map?.invalidateSize();
   };

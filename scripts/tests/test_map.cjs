@@ -70,7 +70,19 @@ test("dark street tiles are the default; terrain is optional and falls back on e
   terrain.events.tileerror();
   assert.equal(attached.at(-1), "sentinel-basemap");
   assert.equal(mapElement.attributes["aria-pressed"], "false");
-  assert.equal(vm.runInContext("sevColor(5)", sandbox), "#d22c29");
+});
+
+test("event markers use category pictograms and severity styling, with a safe generic icon", () => {
+  const { sandbox } = context({ divIcon(options) { return options; } });
+  const aviation = vm.runInContext('eventMapIcon({category: "airspace_incursion", severity: 4})', sandbox);
+  const cyber = vm.runInContext('eventMapIcon({category: "cyber_attack", severity: 3})', sandbox);
+  const generic = vm.runInContext('eventMapIcon({category: "constructor", severity: 99})', sandbox);
+  assert.equal(aviation.className, "event-map-icon event-map-severity-4");
+  assert.equal(cyber.className, "event-map-icon event-map-severity-3");
+  assert.equal(generic.className, "event-map-icon event-map-severity-5");
+  assert.match(generic.html, /<svg/);
+  assert.notEqual(aviation.html, cyber.html);
+  assert.notEqual(cyber.html, generic.html);
 });
 
 test("missing Leaflet still leaves a useful map-unavailable message", () => {
