@@ -89,7 +89,7 @@ a { color: var(--accent); }
 .panel-head h2 { font-size: clamp(18px, 1.55vw, 25px); font-weight: 700; }
 .map-panel, .synopsis-panel { min-height: 0; height: auto; }
 #map { min-height: 390px; }
-.map-panel { height: var(--overview-height); align-self: start; }
+.map-panel { height: var(--overview-height); align-self: start; isolation: isolate; overflow: hidden; }
 .map-panel #map { min-height: 0; }
 .map-expanded { display: flex; }
 .map-panel.map-expanded { height: auto; align-self: auto; }
@@ -316,7 +316,6 @@ a { color: var(--accent); }
   .ao-tab-label { font-size: 14px; }
   .status-cluster { margin-top: auto; flex-wrap: wrap; }
   .health-popover { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; }
-  .map-panel:not(.map-expanded) { position: sticky; top: 16px; }
 }
 @media (min-width: 991px) and (max-width: 1270px) {
   .mission-bar { grid-template-columns: minmax(0, 1fr); }

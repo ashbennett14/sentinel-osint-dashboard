@@ -928,11 +928,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
   document.getElementById("resetMapBtn").addEventListener("click", () => map?.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]));
-  document.getElementById("expandMapBtn").addEventListener("click", (event) => {
-    const expanded = document.querySelector(".map-panel").classList.toggle("map-expanded");
-    event.currentTarget.textContent = expanded ? "Close expanded map" : "Expand map";
-    event.currentTarget.setAttribute("aria-pressed", String(expanded));
+  const mapPanel = document.querySelector(".map-panel");
+  const expandMapButton = document.getElementById("expandMapBtn");
+  const setMapExpanded = (expanded) => {
+    mapPanel.classList.toggle("map-expanded", expanded);
+    expandMapButton.textContent = expanded ? "Close expanded map" : "Expand map";
+    expandMapButton.setAttribute("aria-pressed", String(expanded));
     map?.invalidateSize();
+  };
+  expandMapButton.addEventListener("click", () => setMapExpanded(!mapPanel.classList.contains("map-expanded")));
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && mapPanel.classList.contains("map-expanded") && !document.getElementById("evidenceDrawer").open) {
+      setMapExpanded(false);
+      expandMapButton.focus();
+    }
   });
   document.getElementById("readingModeBtn").addEventListener("click", (event) => {
     const reading = document.body.classList.toggle("reading-mode");
