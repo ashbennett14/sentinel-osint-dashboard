@@ -21,12 +21,22 @@ let map, markersLayer;
 const markersById = new Map();
 
 const AO_CENTER = {
-  AO_HIGH_NORTH: [61.5, 24.0],
+  AO_HIGH_NORTH: [62.5, 20.0],
   AO_EUROPE: [48.8, 21.5],
   AO_BALKANS: [43.8, 21.0],
   AO_LEVANT: [32.5, 36.0],
 };
 const AO_ZOOM = { AO_HIGH_NORTH: 4, AO_EUROPE: 4, AO_BALKANS: 5, AO_LEVANT: 6 };
+const TERRAIN_LABELS = [
+  [63, 10, "Norway"], [63, 17, "Sweden"], [64, 27, "Finland"], [59, 25, "Estonia"],
+  [57, 25, "Latvia"], [55.4, 24.2, "Lithuania"], [65, 0, "Norwegian Sea"],
+  [56.2, 18.5, "Baltic Sea"], [48.9, 31.5, "Ukraine"], [52.2, 19.3, "Poland"],
+  [53.5, 28, "Belarus"], [47.1, 28.2, "Moldova"], [45.8, 25, "Romania"],
+  [44, 20.5, "Serbia"], [44.2, 17.4, "Bosnia & Herz."], [41.2, 21.8, "North Macedonia"],
+  [42.6, 25.2, "Bulgaria"], [39.6, 22.3, "Greece"], [41.2, 19.9, "Albania"],
+  [34.1, 36, "Lebanon"], [35, 38.7, "Syria"], [31.3, 35, "Israel"],
+  [31.4, 37, "Jordan"], [33.5, 43, "Iraq"],
+];
 const AO_META = {
   AO_HIGH_NORTH: {
     title: "High North, Finland & the Baltics",
@@ -64,14 +74,46 @@ function initMap() {
   }
   map = L.map("map", { zoomControl: true }).setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]);
   // Direct, key-free tiles; let the browser honour the provider's cache headers.
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  const streets = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     className: "sentinel-basemap",
     referrerPolicy: "strict-origin-when-cross-origin",
     updateWhenIdle: true,
     keepBuffer: 1,
     maxZoom: 18,
-  }).addTo(map);
+  });
+  const terrain = L.tileLayer("https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief_Bathymetry/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg", {
+    attribution: 'Terrain: <a href="https://science.nasa.gov/resource/blue-marble/">NASA Blue Marble</a> (static imagery)',
+    className: "sentinel-terrain",
+    updateWhenIdle: true,
+    keepBuffer: 1,
+    maxNativeZoom: 8,
+  });
+  let terrainFailed = false;
+  let basemap;
+  const streetButton = document.getElementById("mapLabelsBtn");
+  let preferStreets = false;
+  const terrainLabels = L.layerGroup(TERRAIN_LABELS.map(([lat, lng, name]) => L.marker([lat, lng], {
+    interactive: false, keyboard: false, pane: "shadowPane",
+    icon: L.divIcon({ className: "terrain-label", html: name, iconSize: [0, 0] }),
+  })));
+  const updateBasemap = () => {
+    const next = !preferStreets && !terrainFailed && map.getZoom() <= 6 ? terrain : streets;
+    if (next === basemap) return;
+    if (basemap) map.removeLayer(basemap);
+    if (basemap === terrain) map.removeLayer(terrainLabels);
+    basemap = next;
+    next.addTo(map);
+    if (next === terrain) terrainLabels.addTo(map);
+  };
+  streetButton.addEventListener("click", () => {
+    preferStreets = !preferStreets;
+    streetButton.setAttribute("aria-pressed", String(preferStreets));
+    updateBasemap();
+  });
+  terrain.on("tileerror", () => { terrainFailed = true; updateBasemap(); });
+  map.on("zoomend", updateBasemap);
+  updateBasemap();
   markersLayer = L.layerGroup().addTo(map);
   if (window.ResizeObserver) {
     const mapResize = new ResizeObserver(() => map.invalidateSize({ pan: false }));
@@ -112,7 +154,11 @@ function plotSigActs(sigacts, fit = true) {
     marker.on("click", () => selectEvent(s.id, true));
     marker.addTo(markersLayer);
     markersById.set(s.id, marker);
-    plotted.push(marker.getLatLng());
+    // An outlying Greenland/Atlantic report should not pull the Nordic
+    // overview off the region. Its marker and Locate action remain available.
+    if (state.ao !== "AO_HIGH_NORTH" || (s.lon >= -6 && s.lon <= 45 && s.lat >= 53 && s.lat <= 75)) {
+      plotted.push(marker.getLatLng());
+    }
   });
   if (fit && plotted.length) {
     map.fitBounds(L.latLngBounds(plotted), { padding: [28, 28], maxZoom: 7 });
@@ -150,7 +196,8 @@ function syncSynopsisToggle() {
   const body = panel.querySelector(".synopsis-body");
   const button = document.getElementById("expandSynopsisBtn");
   const expanded = panel.classList.contains("synopsis-expanded");
-  button.classList.toggle("hidden", !expanded && body.scrollHeight <= body.clientHeight + 1);
+  const clipped = [...body.querySelectorAll(".tier-text")].some(tier => tier.scrollHeight > tier.clientHeight + 1);
+  button.classList.toggle("hidden", !expanded && !clipped && body.scrollHeight <= body.clientHeight + 1);
   button.setAttribute("aria-expanded", String(expanded));
   button.textContent = expanded ? "Show compact synopsis" : "Read full synopsis";
 }
@@ -393,14 +440,36 @@ async function refreshAudioHistory() {
 function wireAudioControls() {
   const player = document.getElementById("audioPlayer");
   const playButton = document.getElementById("audioPlayBtn");
+  const seek = document.getElementById("audioSeek");
+  const mute = document.getElementById("audioMute");
+  const elapsed = document.getElementById("audioElapsed");
+  const duration = document.getElementById("audioDuration");
+  const syncTransport = () => {
+    const total = Number.isFinite(player.duration) ? player.duration : 0;
+    seek.max = String(total || 1);
+    seek.value = String(player.currentTime);
+    seek.disabled = !total || !!player.error;
+    seek.setAttribute("aria-valuetext", `${formatAudioTime(player.currentTime)} of ${formatAudioTime(total)}`);
+    elapsed.textContent = formatAudioTime(player.currentTime);
+    duration.textContent = formatAudioTime(total);
+    playButton.disabled = !player.currentSrc || !!player.error;
+    playButton.setAttribute("aria-label", player.paused ? "Play briefing" : "Pause briefing");
+    playButton.firstElementChild.textContent = player.paused ? "▶" : "Ⅱ";
+    mute.setAttribute("aria-pressed", String(player.muted));
+  };
+  ["loadstart", "durationchange", "emptied", "error", "play", "pause", "ended", "timeupdate", "volumechange"].forEach(event => player.addEventListener(event, syncTransport));
+  seek.addEventListener("input", () => {
+    if (Number.isFinite(player.duration)) player.currentTime = Number(seek.value);
+  });
+  mute.addEventListener("click", () => { player.muted = !player.muted; });
+  player.classList.add("hidden");
+  document.getElementById("audioTransport").classList.remove("hidden");
   const remember = (key, value) => { try { localStorage.setItem(key, value); } catch (_) {} };
   const recall = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
   playButton.addEventListener("click", () => {
     if (!player.src) return;
     if (player.paused) player.play().catch(() => {}); else player.pause();
   });
-  player.addEventListener("play", () => { playButton.textContent = "Pause briefing"; });
-  player.addEventListener("pause", () => { playButton.textContent = "Play briefing"; });
   player.addEventListener("loadedmetadata", () => {
     const saved = Number(recall(`sentinel-audio-${currentAudioEpisode?.id}`));
     if (saved > 0 && saved < player.duration - 5) player.currentTime = saved;
@@ -484,6 +553,7 @@ async function refreshHealth() {
 
 function renderFeed(sigacts) {
   const list = document.getElementById("feedList");
+  const expanded = new Set([...list.querySelectorAll(".feed-details[open]")].map(details => details.closest("[data-event-id]").dataset.eventId));
   document.getElementById("feedCount").textContent = `${sigacts.length} event${sigacts.length === 1 ? "" : "s"}${timelineIsLive() ? "" : " · replay"}`;
   if (!sigacts.length) {
     list.innerHTML = `<div class="feed-item"><span class="feed-meta">${timelineIsLive() ? "No qualifying events for the selected AO, period and filters." : "No loaded reports were published by this point in the replay."}</span></div>`;
@@ -493,14 +563,15 @@ function renderFeed(sigacts) {
     const summary = (s.summary || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
     return `
       <article data-event-id="${s.id}" class="feed-item ${s.severity >= 4 ? "feed-item-critical" : ""}">
-        <div class="feed-item-topline">
-          <span class="severity-pill severity-${s.severity}">SEV ${s.severity}</span>
-          <span class="category-pill">${escapeHtml(formatCategory(s.category))}</span>
-          <time>${timeAgo(s.published_at)}</time>
-        </div>
+        <svg class="feed-document" aria-hidden="true" width="20" height="22" viewBox="0 0 20 22" fill="none" stroke="currentColor"><path d="M4 1.5h8l5 5v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-17a1 1 0 0 1 1-1Z"/><path d="M12 2v5h5M6 10h8M6 13h8M6 16h6"/></svg>
         <a class="feed-title" href="${safeUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.title)}</a>
         ${summary ? `<p class="feed-summary">${escapeHtml(summary.slice(0, 180))}${summary.length > 180 ? "…" : ""}</p>` : ""}
+        <time class="feed-time" title="${formatUkTime(s.published_at)}">${timeAgo(s.published_at)}</time>
+        <details class="feed-details"${expanded.has(String(s.id)) ? " open" : ""}>
+        <summary aria-label="Details for this report" title="Report details">⋯</summary>
         <div class="feed-footer">
+          <span class="severity-pill severity-${s.severity}">SEV ${s.severity}</span>
+          <span class="category-pill">${escapeHtml(formatCategory(s.category))}</span>
           <span>${escapeHtml(s.source_name || "Unknown source")}</span>
           <span>${escapeHtml(s.country || "Location unconfirmed")}</span>
           ${s.cluster_size > 1 ? `<span>+${s.cluster_size - 1} related article${s.cluster_size > 2 ? "s" : ""}</span>` : ""}
@@ -508,6 +579,7 @@ function renderFeed(sigacts) {
           ${followButton(s.id)}
           ${s.lat != null && s.lon != null ? `<button class="locate-btn" data-id="${s.id}">Locate</button>` : ""}
         </div>
+        </details>
       </article>`;
   }).join("");
 
