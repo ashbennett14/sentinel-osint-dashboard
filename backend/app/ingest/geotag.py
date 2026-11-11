@@ -178,7 +178,7 @@ GAZETTEER.update({
     "norrbotten": (67.2, 20.0, "Sweden", "AO_HIGH_NORTH"),
     **{local: GAZETTEER[canonical] for local, canonical in {
         "itämeri": "baltic sea", "latvija": "latvia", "rīga": "riga",
-        "beograd": "belgrade", "priština": "pristina", "prishtinë": "pristina",
+        "beograd": "belgrade", "priština": "pristina", "prishtinë": "pristina", "kosova": "kosovo",
         "srbija": "serbia", "hrvatska": "croatia", "crna gora": "montenegro",
         "severna makedonija": "north macedonia", "sjeverna makedonija": "north macedonia",
         "shqipëri": "albania", "tiranë": "tirana", "αθήνα": "athens", "θεσσαλονίκη": "thessaloniki",
@@ -201,7 +201,7 @@ CATEGORY_RULES = [
       "missile strikes", "missiles launched", "missile launched",
       "cross-border strike", "удар", "обстрел", "ракет", "дрон",
       "raketni napad", "napad dronom", "atac cu drone", "atac cu rachete",
-      "غارة جوية", "قصف مدفعي", "هجوم صاروخي"],
+      "غارة جوية", "قصف مدفعي", "هجوم صاروخي", "يقصف أطراف"],
      "kinetic_strike", 5),
     (["sabotage", "arson", "explosive device", "cut cable", "cable damage",
       "undersea cable", "pipeline leak", "pipeline damage", "sabotaza", "sabotaža",
@@ -277,6 +277,10 @@ def classify(title: str, summary: str, source_ao_hint: Optional[str] = None) -> 
         if any(_contains_phrase(text, keyword) for keyword in keywords):
             category, severity = cat_label, base_severity
             break
+    if category in ("diplomatic", "unclassified_reporting") and re.search(
+        r"\b(?:kapjen|sekuestrimin) e (?:\d+ )?armëve\b", text
+    ):
+        category, severity = "security_operation", 2
 
     # A SIGACT is anything with a named AO and a category more specific than
     # "diplomatic" / "unclassified_reporting" background noise.

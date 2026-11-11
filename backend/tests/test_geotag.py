@@ -10,6 +10,8 @@ def test_regional_language_headlines_recognise_specific_security_events():
         ("Rīga: kiberuzbrukums valsts iestādei", "AO_HIGH_NORTH", "Latvia", "cyber_attack"),
         ("Atac cu drone lângă București", "AO_EUROPE", "Romania", "kinetic_strike"),
         ("غارة جوية قرب دمشق", "AO_LEVANT", "Syria", "kinetic_strike"),
+        ("الاحتلال الإسرائيلي يقصف أطراف بيت جن في ريف دمشق", "AO_LEVANT", "Syria", "kinetic_strike"),
+        ("Kosova: detaje për kapjen e 43 armëve të gjata", "AO_BALKANS", "Kosovo", "security_operation"),
     ):
         result = classify(title, "")
         assert (result.ao, result.country, result.category, result.is_sigact) == (ao, country, category, True)
