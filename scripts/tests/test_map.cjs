@@ -7,7 +7,11 @@ const { test } = require("node:test");
 const script = fs.readFileSync(path.join(__dirname, "../../frontend/static/js/app.js"), "utf8");
 
 function context(leaflet) {
-  const mapElement = { innerHTML: "", addEventListener() {} };
+  const mapElement = {
+    innerHTML: "", events: {}, attributes: {},
+    addEventListener(event, handler) { this.events[event] = handler; },
+    setAttribute(name, value) { this.attributes[name] = value; },
+  };
   const sandbox = vm.createContext({
     location: { protocol: "https:", hostname: "sentinel-osint-dashboard.vercel.app" },
     window: { L: leaflet },
@@ -18,7 +22,7 @@ function context(leaflet) {
   return { sandbox, mapElement };
 }
 
-test("map uses attributed terrain at regional zoom and falls back to streets", () => {
+test("dark street tiles are the default; terrain is optional and falls back on error", () => {
   const attached = [];
   const layers = [];
   const handlers = {};
@@ -46,24 +50,26 @@ test("map uses attributed terrain at regional zoom and falls back to streets", (
       return { options: {className: "labels"}, addTo(target) { assert.equal(target, map); attached.push(markers ? "labels" : "events"); return this; } };
     },
   };
-  const { sandbox } = context(leaflet);
+  const { sandbox, mapElement } = context(leaflet);
   vm.runInContext("initMap()", sandbox);
   const [streets, terrain] = layers;
   assert.equal(streets.url, "https://tile.openstreetmap.org/{z}/{x}/{y}.png");
   assert.match(streets.options.attribution, /https:\/\/www.openstreetmap.org\/copyright/);
   assert.match(terrain.url, /BlueMarble_ShadedRelief_Bathymetry.*\{z\}\/\{y\}\/\{x\}/);
   assert.match(terrain.options.attribution, /NASA Blue Marble/);
-  assert.deepEqual(attached, ["sentinel-terrain", "labels", "events"]);
+  assert.deepEqual(attached, ["sentinel-basemap", "events"]);
+  assert.equal(mapElement.attributes["aria-pressed"], "false");
   assert.deepEqual(Array.from(centre), [62.5, 20]);
   assert.equal(zoom, 4);
   zoom = 8;
-  handlers.zoomend();
-  assert.deepEqual(attached.slice(-3), ["removed:sentinel-terrain", "removed:labels", "sentinel-basemap"]);
-  zoom = 4;
-  handlers.zoomend();
-  assert.deepEqual(attached.slice(-2), ["sentinel-terrain", "labels"]);
+  handlers.zoomend?.();
+  assert.deepEqual(attached, ["sentinel-basemap", "events"]);
+  mapElement.events.click();
+  assert.deepEqual(attached.slice(-3), ["removed:sentinel-basemap", "labels", "sentinel-terrain"]);
+  assert.equal(mapElement.attributes["aria-pressed"], "true");
   terrain.events.tileerror();
   assert.equal(attached.at(-1), "sentinel-basemap");
+  assert.equal(mapElement.attributes["aria-pressed"], "false");
   assert.equal(vm.runInContext("sevColor(5)", sandbox), "#d22c29");
 });
 

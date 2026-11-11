@@ -89,31 +89,26 @@ function initMap() {
     keepBuffer: 1,
     maxNativeZoom: 8,
   });
-  let terrainFailed = false;
   let basemap;
-  const streetButton = document.getElementById("mapLabelsBtn");
-  let preferStreets = false;
+  const terrainButton = document.getElementById("mapLabelsBtn");
   const terrainLabels = L.layerGroup(TERRAIN_LABELS.map(([lat, lng, name]) => L.marker([lat, lng], {
     interactive: false, keyboard: false, pane: "shadowPane",
     icon: L.divIcon({ className: "terrain-label", html: name, iconSize: [0, 0] }),
   })));
-  const updateBasemap = () => {
-    const next = !preferStreets && !terrainFailed && map.getZoom() <= 6 ? terrain : streets;
+  const setBasemap = (next) => {
     if (next === basemap) return;
     if (basemap) map.removeLayer(basemap);
     if (basemap === terrain) map.removeLayer(terrainLabels);
     basemap = next;
-    next.addTo(map);
+    terrainButton.setAttribute("aria-pressed", String(next === terrain));
     if (next === terrain) terrainLabels.addTo(map);
+    next.addTo(map);
   };
-  streetButton.addEventListener("click", () => {
-    preferStreets = !preferStreets;
-    streetButton.setAttribute("aria-pressed", String(preferStreets));
-    updateBasemap();
+  terrainButton.addEventListener("click", () => setBasemap(basemap === terrain ? streets : terrain));
+  terrain.on("tileerror", () => {
+    if (basemap === terrain) setBasemap(streets);
   });
-  terrain.on("tileerror", () => { terrainFailed = true; updateBasemap(); });
-  map.on("zoomend", updateBasemap);
-  updateBasemap();
+  setBasemap(streets);
   markersLayer = L.layerGroup().addTo(map);
   if (window.ResizeObserver) {
     const mapResize = new ResizeObserver(() => map.invalidateSize({ pan: false }));
