@@ -80,7 +80,7 @@ a { color: var(--accent); }
 .layout {
   --overview-height: clamp(450px, 38vw, 525px);
   max-width: var(--page-width); padding-inline: var(--gutter);
-  grid-template-columns: minmax(0, 1.18fr) minmax(0, 1fr);
+  grid-template-columns: minmax(310px, 2fr) minmax(0, 3fr);
   grid-template-areas: "map synopsis" "feed feed" "audio audio" "brief brief" "sources sources";
   gap: 16px; align-items: stretch;
 }
@@ -105,10 +105,10 @@ a { color: var(--accent); }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface-2); }
 .legend { min-height: 38px; padding: 8px 18px; flex-wrap: wrap; }
 .synopsis-panel .panel-head { flex-wrap: wrap; }
-.synopsis-body { min-height: 0; overflow: visible; padding: 2px 19px; }
+.synopsis-body { min-height: 0; overflow: visible; padding: 2px clamp(14px, 1.45vw, 22px); }
 .synopsis-tier {
-  display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: start;
-  gap: 14px; margin: 0; padding: 16px 0; border-bottom: 1px solid var(--border);
+  display: grid; grid-template-columns: minmax(0, 1fr); align-items: start;
+  gap: 7px; margin: 0; padding: 12px 0; border-bottom: 1px solid var(--border);
 }
 .synopsis-tier:last-child { border-bottom: 0; }
 .synopsis-tier .tier-label {
@@ -144,6 +144,11 @@ a { color: var(--accent); }
 .chapter-btn:hover, .chapter-btn.active { border-color: var(--accent); }
 .chapter-btn.active { background: #214657; }
 .brief-content a:hover, .workspace-toolbar a:hover { text-decoration: underline; }
+.brief-content {
+  max-width: none; margin-inline: 0; padding-inline: clamp(18px, 2.25vw, 36px);
+  overflow-wrap: anywhere;
+}
+.reading-mode .brief-content { max-width: 76ch; margin-inline: auto; }
 .sources-panel.collapsed { max-height: none; }
 
 @media (max-width: 1170px) {
@@ -184,7 +189,6 @@ a { color: var(--accent); }
   .timeline-controls, .following-panel, .audio-body { padding-inline: 14px; }
   .panel-head { align-items: center; }
   .map-column { --overview-height: 370px; }
-  .synopsis-tier { grid-template-columns: minmax(0, 1fr); gap: 7px; padding-block: 12px; }
   .audio-player-wrap { grid-template-columns: minmax(0, 1fr); }
   .audio-controls .text-input { width: auto; max-width: 100%; }
   .map-expanded { max-height: calc(100dvh - 16px); }
@@ -216,7 +220,6 @@ a { color: var(--accent); }
 .timeline-controls { border-top: 1px solid var(--border); border-bottom: 0; }
 .timeline-controls[open] { max-height: 140px; overflow: auto; }
 .legend { min-height: 30px; padding-block: 4px; }
-.synopsis-tier { padding-block: 12px; }
 .reporting-head-meta { display: flex; align-items: center; justify-content: end; gap: 8px 15px; flex-wrap: wrap; }
 .reporting-tools { display: flex; align-items: start; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
 .reporting-tools > details { padding: 6px 19px; border: 0; }
@@ -315,7 +318,4 @@ a { color: var(--accent); }
   .mission-bar { grid-template-columns: minmax(0, 1fr); }
   .metric-grid { justify-self: start; flex-wrap: wrap; }
   .metric-card:first-child { border-left: 0; padding-left: 0; }
-}
-@media (min-width: 991px) and (max-width: 1440px) {
-  .synopsis-tier { grid-template-columns: minmax(0, 1fr); gap: 7px; }
 }
