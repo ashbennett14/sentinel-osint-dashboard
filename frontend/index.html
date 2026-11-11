@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="static/css/dashboard.css?v=20261110-1">
+<link rel="stylesheet" href="static/css/dashboard.css?v=20261111-1">
 <style media="print">
   body * { visibility: hidden; }
   #briefContent, #briefContent *, #printLogo, #printLogo * { visibility: visible; }
@@ -144,21 +144,9 @@
     </div>
   </section>
 
-  <section class="panel changes-panel" aria-labelledby="changesTitle">
-    <div class="panel-head">
-      <h2 id="changesTitle" tabindex="-1">What changed in the last 24 hours?</h2>
-      <span id="changesFreshness" class="meta"></span>
-    </div>
-    <div class="changes-body">
-      <p id="changesPeriods" class="meta"></p>
-      <p id="changesStatus" role="status">Checking recent reporting…</p>
-      <ul id="changesList" class="changes-list"></ul>
-    </div>
-  </section>
-
   <section class="panel feed-panel">
     <div class="panel-head">
-      <h2>Latest reporting</h2>
+      <h2 id="reportingTitle" tabindex="-1">Latest reporting</h2>
       <span id="feedCount" class="meta mono" aria-live="polite">0 events</span>
     </div>
     <div class="feed-filters">
@@ -290,6 +278,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-<script src="static/js/app.js?v=20261110-2"></script>
+<script src="static/js/app.js?v=20261111-1"></script>
 </body>
 </html>

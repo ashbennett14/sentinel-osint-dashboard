@@ -646,7 +646,6 @@ function wireBriefControls() {
 // ---------------------------------------------------------------------
 function refreshAll() {
   if (!document.getElementById("evidenceDrawer").open) {
-    refreshChanges();
     refreshSigActs();
   }
   refreshSynopsis();
@@ -671,7 +670,6 @@ function wireControls() {
       markersLayer?.clearLayers();
       markersById.clear();
       document.getElementById("feedList").textContent = "Loading reporting…";
-      refreshChanges(true);
       document.getElementById("briefTitle").textContent = AO_META[state.ao].briefTitle;
       document.getElementById("briefHistory").value = "latest";
       if (map) map.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]);
@@ -744,53 +742,8 @@ const ukTime = new Intl.DateTimeFormat("en-GB", {
 });
 const formatUkTime = (value) => ukTime.format(new Date(value));
 const evidenceButton = (id) => `<button type="button" class="btn-ghost evidence-trigger" data-evidence-id="${Number(id)}">View evidence</button>`;
-let changesRequest = 0;
 let evidenceRequest = 0;
 let evidenceTrigger = null;
-
-async function refreshChanges(reset = false) {
-  const ao = state.ao;
-  const request = ++changesRequest;
-  const list = document.getElementById("changesList");
-  const periods = document.getElementById("changesPeriods");
-  const status = document.getElementById("changesStatus");
-  const freshness = document.getElementById("changesFreshness");
-  if (reset) {
-    list.replaceChildren();
-    delete list.dataset.rendered;
-    periods.textContent = freshness.textContent = "";
-    status.textContent = "Checking recent reporting…";
-  }
-  try {
-    const data = await fetchJson(`/api/changes?ao=${encodeURIComponent(ao)}`);
-    if (request !== changesRequest || ao !== state.ao) return;
-    const range = (period) => `${formatUkTime(period.start)} to ${formatUkTime(period.end)}`;
-    periods.textContent = `Latest: ${range(data.current_period)} · Previous: ${range(data.previous_period)}`;
-    freshness.textContent = data.last_collected_at ? `Collected ${formatUkTime(data.last_collected_at)}` : "Collection time unavailable";
-    freshness.classList.toggle("is-stale", data.collection_state !== "current");
-    const message = data.collection_state === "current"
-      ? (data.items.length ? "Based on retained reporting. Follow-up coverage does not itself confirm a change." : "No qualifying reporting in the latest 24 hours.")
-      : (data.collection_state === "stale" ? "Collection is delayed. Recent reporting may be incomplete." : "Collection status is unavailable. This window may be incomplete.");
-    if (status.textContent !== message) status.textContent = message;
-    const focusedId = list.contains(document.activeElement) ? document.activeElement.dataset.evidenceId : null;
-    const markup = data.items.map(item => {
-      const label = item.kind === "new" ? "New to SENTINEL" : "Follow-up coverage";
-      const extra = item.added_publishers.length ? ` · Added publisher: ${item.added_publishers.join(", ")}` : "";
-      return `<li><div><span class="change-kind">${label}</span><h3 class="change-headline">${escapeHtml(item.title)}</h3><span class="meta">${escapeHtml(formatUkTime(item.published_at) + extra)}</span></div>${evidenceButton(item.article_id)}</li>`;
-    }).join("");
-    if (markup !== list.dataset.rendered) {
-      list.innerHTML = markup;
-      list.dataset.rendered = markup;
-      if (focusedId) (list.querySelector(`[data-evidence-id="${Number(focusedId)}"]`) || document.getElementById("changesTitle")).focus();
-    }
-  } catch (_) {
-    if (request !== changesRequest || ao !== state.ao) return;
-    list.replaceChildren();
-    delete list.dataset.rendered;
-    periods.textContent = freshness.textContent = "";
-    status.textContent = "The reporting comparison is unavailable. Try again shortly.";
-  }
-}
 
 async function openEvidence(trigger) {
   const ao = state.ao;
@@ -833,7 +786,7 @@ function wireEvidence() {
   });
   document.getElementById("evidenceDrawer").addEventListener("close", () => {
     evidenceRequest++;
-    const target = evidenceTrigger?.isConnected ? evidenceTrigger : document.getElementById("changesTitle");
+    const target = evidenceTrigger?.isConnected ? evidenceTrigger : document.getElementById("reportingTitle");
     target.focus();
     evidenceTrigger = null;
   });
