@@ -89,6 +89,7 @@ a { color: var(--accent); }
 .panel-head h2 { font-size: clamp(18px, 1.55vw, 25px); font-weight: 700; }
 .map-panel, .synopsis-panel { min-height: 0; height: auto; }
 #map { min-height: 390px; }
+.map-column { grid-area: map; min-width: 0; min-height: var(--overview-height); align-self: stretch; }
 .map-panel { height: var(--overview-height); align-self: start; isolation: isolate; overflow: hidden; }
 .map-panel #map { min-height: 0; }
 .map-expanded { display: flex; }
@@ -166,7 +167,7 @@ a { color: var(--accent); }
   .metric-grid { justify-self: start; grid-column: auto; }
   .metric-card:first-child { border-left: 0; padding-left: 0; }
   .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "synopsis" "feed" "audio" "brief" "sources"; }
-  .map-panel { height: 420px; }
+  .map-column { --overview-height: 420px; }
   .synopsis-panel { height: auto; }
 }
 @media (max-width: 700px) {
@@ -190,7 +191,7 @@ a { color: var(--accent); }
   .panel-head, .reporting-freshness, .feed-item, .feed-filters, .synopsis-body,
   .timeline-controls, .following-panel, .audio-body { padding-inline: 14px; }
   .panel-head { align-items: center; }
-  .map-panel { height: 370px; }
+  .map-column { --overview-height: 370px; }
   .synopsis-tier { grid-template-columns: minmax(0, 1fr); gap: 7px; padding-block: 12px; }
   .audio-player-wrap { grid-template-columns: minmax(0, 1fr); }
   .audio-controls .text-input { width: auto; max-width: 100%; }
@@ -294,6 +295,10 @@ a { color: var(--accent); }
 
 /* Keep the regions visible alongside the workspace on desktop. */
 .dashboard-workspace { min-width: 0; }
+@media (min-width: 991px) and (min-height: 500px) {
+  /* The wrapper ends at the synopsis row, so sticky cannot reach reporting. */
+  .map-column > .map-panel:not(.map-expanded) { position: sticky; top: 16px; }
+}
 @media (min-width: 991px) {
   .dashboard-shell { display: grid; grid-template-columns: clamp(172px, 16vw, 222px) minmax(0, 1fr); align-items: start; }
   .topbar {
