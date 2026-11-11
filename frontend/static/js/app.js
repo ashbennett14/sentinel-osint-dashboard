@@ -191,17 +191,6 @@ function updateAoHeader() {
   document.getElementById("kpiWindow").textContent = WINDOW_LABELS[state.window];
 }
 
-function syncSynopsisToggle() {
-  const panel = document.querySelector(".synopsis-panel");
-  const body = panel.querySelector(".synopsis-body");
-  const button = document.getElementById("expandSynopsisBtn");
-  const expanded = panel.classList.contains("synopsis-expanded");
-  const clipped = [...body.querySelectorAll(".tier-text")].some(tier => tier.scrollHeight > tier.clientHeight + 1);
-  button.classList.toggle("hidden", !expanded && !clipped && body.scrollHeight <= body.clientHeight + 1);
-  button.setAttribute("aria-expanded", String(expanded));
-  button.textContent = expanded ? "Show compact synopsis" : "Read full synopsis";
-}
-
 function updateOverview(sigacts) {
   document.getElementById("kpiEvents").textContent = sigacts.length.toLocaleString();
   document.getElementById("kpiCritical").textContent = sigacts.filter((s) => s.severity >= 4).length.toLocaleString();
@@ -276,7 +265,6 @@ async function refreshSynopsis() {
     operationalEl.textContent = data.operational || "—";
     tacticalEl.textContent = data.tactical || "—";
     showFreshness(metaEl, data.generated_at, 8);
-    syncSynopsisToggle();
   } catch (e) {
     if (request !== synopsisRequest) return;
     strategicEl.textContent = "No synopsis generated yet for this AO/window.";
@@ -284,7 +272,6 @@ async function refreshSynopsis() {
     tacticalEl.textContent = "—";
     metaEl.textContent = "Update unavailable";
     metaEl.classList.add("is-stale");
-    syncSynopsisToggle();
   }
 }
 
@@ -940,13 +927,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Fail closed if local admin capability cannot be confirmed.
     }
   }
-  document.getElementById("expandSynopsisBtn").addEventListener("click", () => {
-    const panel = document.querySelector(".synopsis-panel");
-    panel.classList.toggle("synopsis-expanded");
-    syncSynopsisToggle();
-    if (!panel.classList.contains("synopsis-expanded")) panel.scrollIntoView({ block: "start" });
-  });
-  window.addEventListener("resize", syncSynopsisToggle);
   document.getElementById("resetMapBtn").addEventListener("click", () => map?.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]));
   document.getElementById("expandMapBtn").addEventListener("click", (event) => {
     const expanded = document.querySelector(".map-panel").classList.toggle("map-expanded");
