@@ -75,6 +75,35 @@ def test_stale_unavailable_and_quiet_are_distinct(db):
     assert result["collection_state"] == "current" and not result["items"]
 
 
+def test_source_coverage_counts_located_and_unlocated_recent_ao_articles(db):
+    now = datetime.utcnow()
+    rows = [
+        (1, AO, 1, "Kosovo", 1, True),
+        (2, AO, 2, None, 1, True),
+        (3, "AO_LEVANT", 1, "Jordan", 1, True),
+        (4, AO, 1, "Serbia", 169, True),
+        (5, AO, 1, "Serbia", 1, False),
+        (6, AO, 1, "Albania", -1, True),
+    ]
+    for id, ao, source, country, hours, sigact in rows:
+        db.add(Article(id=id, ao=ao, source_id=source, country=country,
+                       title=f"Article {id}", url=f"https://example.test/articles/{id}",
+                       processed=True, is_sigact=sigact, published_at=now - timedelta(hours=hours)))
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        client = TestClient(app)
+        response = client.get("/api/source-coverage", params={"ao": AO})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["by_source"] == {"1": 1, "2": 1}
+        assert data["by_country"] == {"Kosovo": 1, "Unlocated": 1}
+        assert datetime.fromisoformat(data["end"]) - datetime.fromisoformat(data["start"]) == timedelta(days=7)
+        assert client.get("/api/source-coverage", params={"ao": "invalid"}).status_code == 400
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
 def test_evidence_limit_safe_links_and_missing_anchor(db):
     for id in range(1, 24):
         article(db, id, id, cluster="shared", url="javascript:alert(1)" if id == 1 else None)

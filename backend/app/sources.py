@@ -725,6 +725,43 @@ SOURCES.extend([
     {"name": "Balkan Defence Procurement Watch", "kind": "rss", "url_or_handle": _google_news("(Serbia OR Croatia OR Albania OR Kosovo OR Bulgaria OR Greece) (weapons purchase OR defence procurement OR military acquisition) when:14d"), "ao": "AO_BALKANS", "reliability": "unverified"},
 ])
 
+# Publisher-operated feeds verified to return dated entries. Keep native-language
+# editions distinct from any English-language edition already in the catalogue.
+SOURCES.extend([
+    {"name": "NRK Troms and Finnmark", "kind": "rss", "url_or_handle": "https://www.nrk.no/tromsogfinnmark/toppsaker.rss", "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "NRK Nordland", "kind": "rss", "url_or_handle": "https://www.nrk.no/nordland/toppsaker.rss", "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "SVT Norrbotten", "kind": "rss", "url_or_handle": "https://www.svt.se/nyheter/lokalt/norrbotten/rss.xml", "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "Swedish Police National News", "kind": "rss", "url_or_handle": "https://polisen.se/aktuellt/rss/hela-landet/nyheter-rss---nationella/", "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Finland Government Releases in Finnish", "kind": "rss", "url_or_handle": "https://valtioneuvosto.fi/staattiset-feedit/-/asset_publisher/6KLhMPTNqHRd/rss", "ao": "AO_HIGH_NORTH", "reliability": "official"},
+    {"name": "Yle Finnish Top News", "kind": "rss", "url_or_handle": "https://yle.fi/rss/uutiset/paauutiset", "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "Latvian Public Media Latvian Edition", "kind": "rss", "url_or_handle": "https://www.lsm.lv/rss/", "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "TVNET Latvia", "kind": "rss", "url_or_handle": "https://www.tvnet.lv/rss", "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "LRT English News Direct", "kind": "rss", "url_or_handle": "https://www.lrt.lt/en/news-in-english?rss", "ao": "AO_HIGH_NORTH", "reliability": "established_media"},
+    {"name": "N1 Serbia Direct", "kind": "rss", "url_or_handle": "https://n1info.rs/feed/", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "N1 Croatia Direct", "kind": "rss", "url_or_handle": "https://n1info.hr/feed/", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "N1 Bosnia Direct", "kind": "rss", "url_or_handle": "https://n1info.ba/feed/", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "BIRN Albania Reporter.al", "kind": "rss", "url_or_handle": "https://www.reporter.al/feed/", "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "KALLXO Kosovo", "kind": "rss", "url_or_handle": "https://kallxo.com/feed/", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Vijesti Montenegro", "kind": "rss", "url_or_handle": "https://www.vijesti.me/rss", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Danas Serbia", "kind": "rss", "url_or_handle": "https://www.danas.rs/feed/", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Vreme Serbia", "kind": "rss", "url_or_handle": "https://vreme.com/feed/", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "KRIK Serbia Investigations", "kind": "rss", "url_or_handle": "https://www.krik.rs/feed/", "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "CINS Serbia Investigations", "kind": "rss", "url_or_handle": "https://www.cins.rs/feed/", "ao": "AO_BALKANS", "reliability": "regional_specialist"},
+    {"name": "Meta.mk North Macedonia English", "kind": "rss", "url_or_handle": "https://meta.mk/en/feed/", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "ERT News Greece", "kind": "rss", "url_or_handle": "https://www.ertnews.gr/feed/", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Radio Bulgaria English Direct", "kind": "rss", "url_or_handle": "https://bnrnews.bg/api/rss/en", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "Government of Slovenia English Releases", "kind": "rss", "url_or_handle": "https://www.gov.si/en/news/rss/", "ao": "AO_BALKANS", "reliability": "official"},
+    {"name": "RFE/RL Montenegro Direct", "kind": "rss", "url_or_handle": "https://www.slobodnaevropa.org/api/zitorl-vomx-tpemomo", "ao": "AO_BALKANS", "reliability": "established_media"},
+    {"name": "NewsMaker Moldova Romanian Edition", "kind": "rss", "url_or_handle": "https://newsmaker.md/ro/feed/", "ao": "AO_EUROPE", "reliability": "established_media"},
+    {"name": "Ziarul de Gardă Moldova", "kind": "rss", "url_or_handle": "https://www.zdg.md/feed/", "ao": "AO_EUROPE", "reliability": "regional_specialist"},
+    {"name": "G4Media Romania", "kind": "rss", "url_or_handle": "https://www.g4media.ro/feed", "ao": "AO_EUROPE", "reliability": "established_media"},
+    {"name": "OSW Eastern Studies English Direct", "kind": "rss", "url_or_handle": "https://www.osw.waw.pl/en/rss.xml", "ao": "AO_EUROPE", "reliability": "regional_specialist"},
+    {"name": "Syria TV Arabic", "kind": "rss", "url_or_handle": "https://www.syria.tv/rss.xml", "ao": "AO_LEVANT", "reliability": "established_media"},
+    {"name": "Enab Baladi Arabic", "kind": "rss", "url_or_handle": "https://www.enabbaladi.net/feed/", "ao": "AO_LEVANT", "reliability": "established_media"},
+    {"name": "SANA English Official Agency", "kind": "rss", "url_or_handle": "https://www.sana.sy/en/feed/", "ao": "AO_LEVANT", "reliability": "official"},
+    {"name": "The National Middle East Direct", "kind": "rss", "url_or_handle": "https://www.thenationalnews.com/arc/outboundfeeds/rss/?outputType=xml", "ao": "AO_LEVANT", "reliability": "established_media"},
+])
+
 # Split the original combined northern-Europe collection pack into the two
 # distinct AOs. Keeping this routing in one explicit table prevents individual
 # source declarations added over several versions from silently retaining the

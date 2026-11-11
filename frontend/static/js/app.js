@@ -83,7 +83,7 @@ function sevColor(sev) {
   return "#7c8890";
 }
 
-function plotSigActs(sigacts) {
+function plotSigActs(sigacts, fit = true) {
   if (!markersLayer || !map) return;
   markersLayer.clearLayers();
   markersById.clear();
@@ -110,7 +110,7 @@ function plotSigActs(sigacts) {
     markersById.set(s.id, marker);
     plotted.push(marker.getLatLng());
   });
-  if (plotted.length) {
+  if (fit && plotted.length) {
     map.fitBounds(L.latLngBounds(plotted), { padding: [28, 28], maxZoom: 7 });
   }
 }
@@ -191,9 +191,7 @@ async function refreshSigActs() {
     if (state.category) params.set("category", state.category);
     const data = await fetchJson(`/api/sigacts?${params.toString()}`);
     if (request !== sigactRequest) return;
-    plotSigActs(data);
-    renderFeed(data);
-    updateOverview(data);
+    receiveReporting(data);
     maybeNotify(data);
   } catch (e) {
     if (request !== sigactRequest) return;
@@ -203,18 +201,22 @@ async function refreshSigActs() {
   }
 }
 
+let synopsisRequest = 0;
 async function refreshSynopsis() {
+  const request = ++synopsisRequest;
   const strategicEl = document.getElementById("synStrategic");
   const operationalEl = document.getElementById("synOperational");
   const tacticalEl = document.getElementById("synTactical");
   const metaEl = document.getElementById("synopsisMeta");
   try {
     const data = await fetchJson(`/api/synopsis?ao=${state.ao}&window=${state.window}`);
+    if (request !== synopsisRequest) return;
     strategicEl.textContent = data.strategic || "—";
     operationalEl.textContent = data.operational || "—";
     tacticalEl.textContent = data.tactical || "—";
     showFreshness(metaEl, data.generated_at, 8);
   } catch (e) {
+    if (request !== synopsisRequest) return;
     strategicEl.textContent = "No synopsis generated yet for this AO/window.";
     operationalEl.textContent = "—";
     tacticalEl.textContent = "—";
@@ -224,6 +226,8 @@ async function refreshSynopsis() {
 }
 
 let currentBriefContent = "";
+let briefRequest = 0;
+let briefHistoryRequest = 0;
 let currentAudioEpisode = null;
 
 function withoutClassification(content) {
@@ -235,6 +239,7 @@ function withoutClassification(content) {
 }
 
 async function refreshBrief(briefId) {
+  const request = ++briefRequest;
   const el = document.getElementById("briefContent");
   const metaEl = document.getElementById("briefMeta");
   const factBox = document.getElementById("factCheckBox");
@@ -244,6 +249,7 @@ async function refreshBrief(briefId) {
       ? `/api/briefs/${briefId}`
       : `/api/brief/latest?ao=${state.ao}`;
     const data = await fetchJson(path);
+    if (request !== briefRequest) return;
     currentBriefContent = withoutClassification(data.content);
     const rendered = marked.parse(currentBriefContent);
     el.innerHTML = window.DOMPurify
@@ -263,20 +269,24 @@ async function refreshBrief(briefId) {
       factBox.classList.add("hidden");
     }
   } catch (e) {
+    if (request !== briefRequest) return;
     el.textContent = "No analyst brief generated yet — the first generation cycle runs shortly after startup.";
     document.getElementById("briefNav").innerHTML = "";
     metaEl.textContent = "Update unavailable";
+    metaEl.classList.add("is-stale");
     factBox.classList.add("hidden");
   }
 }
 
 async function refreshBriefHistory() {
+  const request = ++briefHistoryRequest;
   const select = document.getElementById("briefHistory");
   try {
     const briefs = await fetchJson(`/api/briefs?ao=${state.ao}&limit=30`);
+    if (request !== briefHistoryRequest) return;
     const currentValue = select.value;
     select.innerHTML = `<option value="latest">Latest</option>` + briefs.map(
-      (b) => `<option value="${b.id}">${utcDate(b.generated_at).toLocaleString()}</option>`
+      (b) => `<option value="${b.id}">${formatUkTime(b.generated_at)}</option>`
     ).join("");
     select.value = currentValue || "latest";
   } catch (e) {
@@ -311,8 +321,8 @@ async function refreshAudioBrief(episodeId) {
     const previousAudioUrl = currentAudioEpisode && currentAudioEpisode.audio_url;
     currentAudioEpisode = data;
     title.textContent = data.title;
-    meta.textContent = `${formatAudioTime(data.duration_seconds)} · Four regional chapters`;
-    meta.classList.toggle("is-stale", Date.now() - utcDate(data.generated_at).getTime() > 30 * 3600000);
+    showFreshness(meta, data.generated_at, 30);
+    meta.textContent = `${formatAudioTime(data.duration_seconds)} · Four regional chapters · ${meta.textContent}`;
     period.textContent = `${utcDate(data.period_start).toLocaleString()} to ${utcDate(data.period_end).toLocaleString()}`;
     transcript.textContent = data.transcript || "No transcript is available.";
     download.disabled = !data.audio_url;
@@ -427,10 +437,17 @@ async function refreshHealth() {
       `<div><strong>${escapeHtml({ingest:"Collection",synopsis:"Synopsis",brief:"Daily brief",audio:"Audio briefing"}[component.component] || component.component)}</strong><span>${component.last_success_at ? escapeHtml(timeAgo(component.last_success_at)) : "Awaiting update"}${component.last_error ? " · delayed" : ""}</span></div>`
     ).join("");
     const ingest = (data.components || []).find((c) => c.component === "ingest");
+    const fresh = document.getElementById("reportingFreshness");
+    const collected = reportingDate(ingest?.last_success_at);
+    const delayed = !Number.isFinite(collected) || !!ingest?.last_error || Date.now() - collected > 2 * 3600000;
+    fresh.textContent = Number.isFinite(collected)
+      ? `${delayed ? "Collection delayed · " : ""}Last successful collection: ${formatUkTime(new Date(collected).toISOString())}${delayed ? " · Recent reporting may be incomplete." : ""}`
+      : "Collection time unavailable · Recent reporting may be incomplete.";
+    fresh.classList.toggle("is-stale", delayed);
     systemState.textContent = ingest && ingest.last_success_at
       ? `Collected ${timeAgo(ingest.last_success_at)}`
       : "Collection pending";
-    document.querySelector(".dot-live").classList.toggle("is-stale", !ingest?.last_success_at || Date.now() - utcDate(ingest.last_success_at).getTime() > 2 * 3600000);
+    document.querySelector(".dot-live").classList.toggle("is-stale", delayed);
     const problems = (data.components || []).filter((c) => c.last_error);
     if (problems.length) {
       banner.textContent = problems.map(
@@ -442,6 +459,8 @@ async function refreshHealth() {
     }
   } catch (e) {
     systemState.textContent = "Offline";
+    document.getElementById("reportingFreshness").textContent = "Collection status unavailable · Recent reporting may be incomplete.";
+    document.getElementById("reportingFreshness").classList.add("is-stale");
     banner.textContent = `⚠ Backend unreachable at ${API_BASE}`;
     banner.classList.remove("hidden");
   }
@@ -449,9 +468,9 @@ async function refreshHealth() {
 
 function renderFeed(sigacts) {
   const list = document.getElementById("feedList");
-  document.getElementById("feedCount").textContent = `${sigacts.length} events`;
+  document.getElementById("feedCount").textContent = `${sigacts.length} event${sigacts.length === 1 ? "" : "s"}${timelineIsLive() ? "" : " · replay"}`;
   if (!sigacts.length) {
-    list.innerHTML = `<div class="feed-item"><span class="feed-meta">No qualifying events in this AO for the selected period. Try a longer reporting window.</span></div>`;
+    list.innerHTML = `<div class="feed-item"><span class="feed-meta">${timelineIsLive() ? "No qualifying events for the selected AO, period and filters." : "No loaded reports were published by this point in the replay."}</span></div>`;
     return;
   }
   list.innerHTML = sigacts.map((s) => {
@@ -470,6 +489,7 @@ function renderFeed(sigacts) {
           <span>${escapeHtml(s.country || "Location unconfirmed")}</span>
           ${s.cluster_size > 1 ? `<span>+${s.cluster_size - 1} related article${s.cluster_size > 2 ? "s" : ""}</span>` : ""}
           ${evidenceButton(s.id)}
+          ${followButton(s.id)}
           ${s.lat != null && s.lon != null ? `<button class="locate-btn" data-id="${s.id}">Locate</button>` : ""}
         </div>
       </article>`;
@@ -489,7 +509,8 @@ function renderFeed(sigacts) {
 
 function timeAgo(isoStr) {
   if (!isoStr) return "";
-  const diffMs = Date.now() - new Date(isoStr + (isoStr.endsWith("Z") ? "" : "Z")).getTime();
+  const diffMs = Math.max(0, Date.now() - reportingDate(isoStr));
+  if (!Number.isFinite(diffMs)) return "";
   const mins = Math.round(diffMs / 60000);
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.round(mins / 60);
@@ -534,22 +555,30 @@ function wireNotifyButton() {
 // ---------------------------------------------------------------------
 async function refreshSources() {
   const list = document.getElementById("sourcesList");
+  const ao = state.ao;
+  const coverageEl = document.getElementById("sourceCoverage");
+  const expanded = !document.getElementById("sourcesPanel").classList.contains("collapsed");
   try {
-    const sources = await fetchJson(`/api/sources`);
+    const [sources, coverage] = await Promise.all([
+      fetchJson(`/api/sources`),
+      expanded ? fetchJson(`/api/source-coverage?ao=${encodeURIComponent(ao)}`).catch(() => null) : null,
+    ]);
+    if (ao !== state.ao) return;
     const enabled = sources.filter((s) => s.enabled);
     const healthy = enabled.filter((s) => !s.last_error).length;
-    const relevant = enabled.filter((s) => s.ao === state.ao || s.ao === "GLOBAL");
-    const relevantHealthy = relevant.filter((s) => !s.last_error).length;
+    const relevant = enabled.filter((s) => s.ao === ao || s.ao === "GLOBAL" || coverage?.by_source[s.id]);
+    const relevantHealthy = relevant.filter((s) => s.last_fetched_at && !s.last_error).length;
     document.getElementById("sourceSummary").textContent =
       `${healthy}/${enabled.length} enabled sources healthy`;
     document.getElementById("kpiSources").textContent = `${relevantHealthy}/${relevant.length}`;
+    if (expanded) renderCoverage(coverageEl, coverage, relevant);
     list.innerHTML = relevant.map((s) => `
       <div class="source-row">
         <span class="src-name">${escapeHtml(s.name)}</span>
         <span class="src-meta">${s.kind}</span>
         <span class="src-meta">${s.ao}</span>
         <span class="src-meta">${s.reliability}</span>
-        <span class="src-meta ${s.error_count > 3 ? "src-error" : ""}">${s.last_error ? "err: " + escapeHtml(s.last_error).slice(0, 40) : (s.last_fetched_at ? "ok · " + timeAgo(s.last_fetched_at) : "not fetched yet")}</span>
+        <span class="src-meta ${s.last_error ? "src-error" : ""}">${s.last_error ? "Fetch failing" : (s.last_fetched_at ? "Fetched " + timeAgo(s.last_fetched_at) : "Not fetched yet")}${coverage ? ` · ${coverage.by_source[s.id] || 0} recent articles` : ""}</span>
         ${READ_ONLY ? "" : `<button class="src-toggle ${s.enabled ? "on" : "off"}" data-id="${s.id}" data-enabled="${s.enabled}">${s.enabled ? "Enabled" : "Disabled"}</button>
         <button class="src-delete" data-id="${s.id}">Delete</button>`}
       </div>
@@ -575,6 +604,8 @@ async function refreshSources() {
       });
     });
   } catch (e) {
+    if (ao !== state.ao) return;
+    coverageEl.textContent = "Source coverage is unavailable.";
     list.innerHTML = `<div class="feed-item"><span class="feed-meta">Could not load sources.</span></div>`;
   }
 }
@@ -645,7 +676,7 @@ function wireBriefControls() {
 // UI wiring
 // ---------------------------------------------------------------------
 function refreshAll() {
-  if (!document.getElementById("evidenceDrawer").open) {
+  if (!document.getElementById("evidenceDrawer").open && timelineIsLive()) {
     refreshSigActs();
   }
   refreshSynopsis();
@@ -666,6 +697,8 @@ function wireControls() {
       btn.setAttribute("aria-current", "page");
       btn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
       state.ao = btn.dataset.ao;
+      writeView();
+      resetReportingTimeline();
       document.getElementById("evidenceDrawer").close();
       markersLayer?.clearLayers();
       markersById.clear();
@@ -678,14 +711,18 @@ function wireControls() {
       refreshSynopsis();
       refreshBrief("latest");
       refreshBriefHistory();
+      refreshSources();
     });
   });
 
   document.querySelectorAll(".window-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".window-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".window-btn").forEach((b) => { b.classList.remove("active"); b.setAttribute("aria-pressed", "false"); });
       btn.classList.add("active");
+      btn.setAttribute("aria-pressed", "true");
       state.window = btn.dataset.window;
+      writeView();
+      resetReportingTimeline();
       updateAoHeader();
       refreshSigActs();
       refreshSynopsis();
@@ -714,18 +751,23 @@ function wireControls() {
   });
   document.getElementById("sourcesToggleBtn").addEventListener("click", () => {
     setSourcesCollapsed(!document.getElementById("sourcesPanel").classList.contains("collapsed"));
+    if (!document.getElementById("sourcesPanel").classList.contains("collapsed")) refreshSources();
   });
 
   let searchTimeout;
   document.getElementById("feedSearch").addEventListener("input", (e) => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-      state.search = e.target.value.trim();
+      state.search = e.target.value.trim().slice(0, 160);
+      writeView(true);
+      resetReportingTimeline();
       refreshSigActs();
     }, 300);
   });
   document.getElementById("feedCategoryFilter").addEventListener("change", (e) => {
     state.category = e.target.value;
+    writeView();
+    resetReportingTimeline();
     refreshSigActs();
   });
 
@@ -734,13 +776,17 @@ function wireControls() {
   wireBriefControls();
   wireAudioControls();
   wireEvidence();
+  wireReportingTools();
 }
 
 const ukTime = new Intl.DateTimeFormat("en-GB", {
   day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   timeZone: "Europe/London", timeZoneName: "short",
 });
-const formatUkTime = (value) => ukTime.format(new Date(value));
+const formatUkTime = (value) => {
+  const date = reportingDate(value);
+  return Number.isFinite(date) ? ukTime.format(date) : "Date unavailable";
+};
 const evidenceButton = (id) => `<button type="button" class="btn-ghost evidence-trigger" data-evidence-id="${Number(id)}">View evidence</button>`;
 let evidenceRequest = 0;
 let evidenceTrigger = null;
@@ -766,6 +812,7 @@ async function openEvidence(trigger) {
     const data = await fetchJson(`/api/events/${id}/evidence?ao=${encodeURIComponent(ao)}`);
     if (!drawer.open || request !== evidenceRequest || ao !== state.ao) return;
     title.textContent = data.title;
+    markStoryRead(data, ao);
     status.textContent = "Related reporting, newest first. Repeated claims may come from the same underlying account.";
     timeline.innerHTML = data.articles.map(article => {
       const excerpt = article.excerpt.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -832,6 +879,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   } else {
     manualControls.forEach((id) => document.getElementById(id)?.classList.remove("hidden"));
   }
+  readView();
   initMap();
   wireControls();
   document.querySelector(".ao-tab.active")?.setAttribute("aria-current", "page");
@@ -841,9 +889,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 function showFreshness(element, value, hours) {
-  const stale = !value || Date.now() - utcDate(value).getTime() > hours * 3600000;
-  element.textContent = `${stale ? "Previous update" : "Updated"} ${timeAgo(value)}`;
-  element.title = value ? utcDate(value).toLocaleString() : "No update available";
+  const stamp = reportingDate(value);
+  const stale = !Number.isFinite(stamp) || Date.now() - stamp > hours * 3600000;
+  element.textContent = Number.isFinite(stamp) ? `${stale ? "Previous update" : "Updated"} ${formatUkTime(new Date(stamp).toISOString())}` : "Update unavailable";
+  element.title = Number.isFinite(stamp) ? timeAgo(value) : "No update available";
   element.classList.toggle("is-stale", stale);
 }
 

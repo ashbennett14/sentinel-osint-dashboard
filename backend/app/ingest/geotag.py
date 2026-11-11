@@ -169,6 +169,25 @@ GAZETTEER = {
     "haifa": (32.794, 34.9896, "Israel", "AO_LEVANT"),
 }
 
+# Local spellings from direct regional feeds. Use specific place names and
+# phrases instead of assigning coordinates based on a publisher's address.
+GAZETTEER.update({
+    "troms": (69.0, 19.0, "Norway", "AO_HIGH_NORTH"),
+    "finnmark": (70.1, 25.4, "Norway", "AO_HIGH_NORTH"),
+    "nordland": (67.7, 14.7, "Norway", "AO_HIGH_NORTH"),
+    "norrbotten": (67.2, 20.0, "Sweden", "AO_HIGH_NORTH"),
+    **{local: GAZETTEER[canonical] for local, canonical in {
+        "itämeri": "baltic sea", "latvija": "latvia", "rīga": "riga",
+        "beograd": "belgrade", "priština": "pristina", "prishtinë": "pristina",
+        "srbija": "serbia", "hrvatska": "croatia", "crna gora": "montenegro",
+        "severna makedonija": "north macedonia", "sjeverna makedonija": "north macedonia",
+        "shqipëri": "albania", "tiranë": "tirana", "αθήνα": "athens", "θεσσαλονίκη": "thessaloniki",
+        "românia": "romania", "bucurești": "bucharest",
+        "سوريا": "syria", "دمشق": "damascus", "لبنان": "lebanon", "بيروت": "beirut",
+        "غزة": "gaza", "إسرائيل": "israel",
+    }.items()},
+})
+
 # ---------------------------------------------------------------------------
 # Category keywords -> (category label, severity baseline)
 # ---------------------------------------------------------------------------
@@ -180,24 +199,36 @@ CATEGORY_RULES = [
       "drone strikes", "drone attack", "drone attacks", "rocket fire",
       "shelling", "missile attack", "missile attacks", "missile strike",
       "missile strikes", "missiles launched", "missile launched",
-      "cross-border strike", "удар", "обстрел", "ракет", "дрон"],
+      "cross-border strike", "удар", "обстрел", "ракет", "дрон",
+      "raketni napad", "napad dronom", "atac cu drone", "atac cu rachete",
+      "غارة جوية", "قصف مدفعي", "هجوم صاروخي"],
      "kinetic_strike", 5),
     (["sabotage", "arson", "explosive device", "cut cable", "cable damage",
-      "undersea cable", "pipeline leak", "pipeline damage"], "sabotage", 4),
-    (["jamming", "gps spoofing", "gnss interference", "signal interference"],
+      "undersea cable", "pipeline leak", "pipeline damage", "sabotaza", "sabotaža",
+      "misstänkt sabotage", "epäilty sabotaasi"], "sabotage", 4),
+    (["jamming", "gps spoofing", "gnss interference", "signal interference",
+      "gps-häirintä", "gps-störningar", "gps-forstyrrelser"],
      "electronic_warfare", 3),
     (["cyberattack", "cyber attack", "cyber incident", "ransomware",
-      "malware attack", "denial-of-service", "ddos"], "cyber_attack", 3),
+      "malware attack", "denial-of-service", "ddos", "kibernetički napad",
+      "kibernetski napad", "atac cibernetic", "sulm kibernetik", "kyberhyökkäys",
+      "kiberuzbrukums", "cyberangrep", "cyberattacken", "هجوم سيبراني"], "cyber_attack", 3),
     (["espionage", "spy ring", "expelled diplomat", "intelligence officer arrested"],
      "espionage", 3),
-    (["airspace violation", "airspace incursion", "scrambled jets", "qra scramble"],
+    (["airspace violation", "airspace incursion", "scrambled jets", "qra scramble",
+      "ilmatilan loukkaus", "kränkning av luftrummet", "gaisa telpas pārkāpums"],
      "airspace_incursion", 3),
-    (["snap exercise", "snap drill", "military drill", "war games", "exercise zapad"],
+    (["snap exercise", "snap drill", "military drill", "war games", "exercise zapad",
+      "vojna vežba", "vojna vježba", "vojne vježbe", "militærøvelse",
+      "militärövning", "sotaharjoitus", "militārās mācības"],
      "exercise", 2),
     (["protest", "protests", "demonstration", "demonstrations", "riot", "riots"],
      "civil_unrest", 2),
     (["arrest", "arrests", "arrested", "detained", "security raid", "police raid",
-      "smuggling", "weapons seizure", "arms seizure", "contraband"],
+      "smuggling", "weapons seizure", "arms seizure", "contraband", "hapšenje",
+      "uhapšen", "uhapšeni", "uhićen", "zapljena oružja", "zaplena oružja",
+      "kontrabandë me armë", "sekuestruan armë", "captură de arme",
+      "παράνομη διακίνηση όπλων", "beslag av våpen", "ضبط أسلحة"],
      "security_operation", 2),
     (["statement", "condemn", "summit", "meeting", "visit"], "diplomatic", 1),
 ]

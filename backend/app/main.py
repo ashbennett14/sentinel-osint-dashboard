@@ -7,6 +7,7 @@ from fastapi import BackgroundTasks, FastAPI, Depends, Query, HTTPException, sta
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.config import settings
 from app.ao import VALID_AOS
@@ -328,6 +329,25 @@ def get_audio_brief_file(
 @app.get("/api/sources", response_model=list[SourceHealthOut])
 def list_sources(db: Session = Depends(get_db)):
     return db.query(Source).order_by(Source.error_count.desc()).all()
+
+
+@app.get("/api/source-coverage")
+def source_coverage(ao: str = Query(...), db: Session = Depends(get_db)):
+    if ao not in VALID_AOS:
+        raise HTTPException(400, "invalid AO")
+    end = datetime.utcnow()
+    start = end - timedelta(days=7)
+    base = db.query(Article).filter(
+        Article.ao == ao, Article.processed.is_(True), Article.is_sigact.is_(True),
+        Article.published_at >= start, Article.published_at < end,
+    )
+    publishers = base.with_entities(Article.source_id, func.count(Article.id)).group_by(Article.source_id).all()
+    countries = base.with_entities(Article.country, func.count(Article.id)).group_by(Article.country).all()
+    return {
+        "ao": ao, "start": start.isoformat() + "Z", "end": end.isoformat() + "Z",
+        "by_source": {id: count for id, count in publishers if id is not None},
+        "by_country": {name or "Unlocated": count for name, count in countries},
+    }
 
 
 # Kept as an alias for backwards compatibility with earlier versions of the frontend.

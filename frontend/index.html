@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="static/css/dashboard.css?v=20261111-1">
+<link rel="stylesheet" href="static/css/dashboard.css?v=20261111-2">
 <style media="print">
   body * { visibility: hidden; }
   #briefContent, #briefContent *, #printLogo, #printLogo * { visibility: visible; }
@@ -97,6 +97,8 @@
 <div class="workspace-toolbar">
   <div id="periodControls"><span class="toolbar-label">Reporting period</span></div>
   <span class="toolbar-help">Applies to the synopsis, map and reporting</span>
+  <button id="shareView" class="btn-ghost" type="button">Copy view link</button>
+  <span id="shareStatus" class="meta" role="status"></span>
   <a href="#briefPanel">Read daily brief ↓</a>
 </div>
 
@@ -113,6 +115,13 @@
         <button class="window-btn" data-window="30d">30D</button>
       </div>
     </div>
+    <details class="timeline-controls" id="mapTimeline">
+      <summary>Publication timeline</summary>
+      <p class="meta">Replay the loaded reports by publication time, not when events occurred.</p>
+      <label for="timelinePosition" id="timelineLabel">Latest reporting</label>
+      <input id="timelinePosition" type="range" min="0" max="1000" value="1000" disabled>
+      <button id="timelineLive" class="btn-ghost" type="button">Back to latest</button>
+    </details>
     <div id="map"></div>
     <img class="map-watermark" src="static/img/sentinel-icon-watermark.png" alt="">
     <div class="legend">
@@ -149,8 +158,9 @@
       <h2 id="reportingTitle" tabindex="-1">Latest reporting</h2>
       <span id="feedCount" class="meta mono" aria-live="polite">0 events</span>
     </div>
+    <p id="reportingFreshness" class="reporting-freshness meta" role="status">Checking collection freshness…</p>
     <div class="feed-filters">
-      <input id="feedSearch" type="text" placeholder="Search title/summary…" class="text-input">
+      <input id="feedSearch" type="text" maxlength="160" aria-label="Search reporting" placeholder="Search title/summary…" class="text-input">
       <select id="feedCategoryFilter" class="text-input">
         <option value="">All categories</option>
         <option value="sabotage">Sabotage</option>
@@ -164,6 +174,13 @@
         <option value="security_operation">Security operation</option>
       </select>
     </div>
+    <details id="following" class="following-panel">
+      <summary>Following <span id="followingCount" class="meta"></span></summary>
+      <p class="meta">Saved on this browser. Topics match loaded reporting in the selected AO and filters.</p>
+      <form id="followTopicForm"><input id="followTopic" class="text-input" maxlength="80" placeholder="e.g. Finland or undersea cables" aria-label="Topic or country"><button class="btn-ghost" type="submit">Follow topic or country</button></form>
+      <p id="followingStatus" class="meta" role="status"></p>
+      <div id="followingItems"></div>
+    </details>
     <div id="feedList" class="feed-list"></div>
   </section>
 
@@ -177,6 +194,7 @@
       </div>
     </div>
     <div id="sourcePanelBody">
+      <div id="sourceCoverage" class="source-coverage meta">Open Sources to see recent coverage.</div>
       <div id="addSourceForm" class="add-source-form hidden">
         <input id="srcName" class="text-input" placeholder="Source name" aria-label="Source name">
         <select id="srcKind" class="text-input" aria-label="Source type">
@@ -278,6 +296,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-<script src="static/js/app.js?v=20261111-1"></script>
+<script src="static/js/app.js?v=20261111-2"></script>
+<script src="static/js/reporting-tools.js?v=20261111-2"></script>
 </body>
 </html>

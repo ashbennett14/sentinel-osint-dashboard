@@ -3,6 +3,20 @@ import unittest
 from app.ingest.geotag import classify
 
 
+def test_regional_language_headlines_recognise_specific_security_events():
+    for title, ao, country, category in (
+        ("Beograd: uhapšeni zbog krijumčarenja", "AO_BALKANS", "Serbia", "security_operation"),
+        ("Norrbotten: militärövning inleds", "AO_HIGH_NORTH", "Sweden", "exercise"),
+        ("Rīga: kiberuzbrukums valsts iestādei", "AO_HIGH_NORTH", "Latvia", "cyber_attack"),
+        ("Atac cu drone lângă București", "AO_EUROPE", "Romania", "kinetic_strike"),
+        ("غارة جوية قرب دمشق", "AO_LEVANT", "Syria", "kinetic_strike"),
+    ):
+        result = classify(title, "")
+        assert (result.ao, result.country, result.category, result.is_sigact) == (ao, country, category, True)
+
+    assert not classify("Beograd: novi kulturni festival", "").is_sigact
+
+
 class ClassifierTests(unittest.TestCase):
     def test_patriot_does_not_match_riot(self):
         result = classify(
