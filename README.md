@@ -131,6 +131,22 @@ What's new:
 - **Error visibility** — if synopsis or brief generation starts failing (bad API key, rate limit, etc.), a red banner appears at the top of the dashboard rather than the panel silently going stale.
 - **Expanded starter sources & gazetteer** — more RSS feeds and Telegram channels across both AOs, plus more granular locations (specific bases, named operations, more towns) in `ingest/geotag.py`.
 
+## Combined Daily Intelligence Report
+
+Published combined editions are dated PDFs under `frontend/reports/`, linked
+from the dashboard's Daily Intelligence Report panel. Each edition covers all
+four regions and retains each brief's reporting window and source links.
+Update the panel's link and visible date together when publishing a new edition.
+Publishing a combined edition is currently an editorial step; the regional
+brief and podcast schedules are unchanged.
+
+Use only photographs from cited source articles that directly illustrate a
+development in the edition, and only when reuse is permitted. Credit the
+photographer or publisher, link the original article, and caption what the
+image shows. If the image's relevance, provenance or reuse rights cannot be
+established, omit it. Do not substitute stock photos or unrelated archival
+imagery. Label map locations as approximate.
+
 ## Branding
 
 All logo assets live in `frontend/static/img/`, generated from the provided logo sheet:
