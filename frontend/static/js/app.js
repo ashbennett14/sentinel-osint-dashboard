@@ -149,15 +149,15 @@ function plotSigActs(sigacts, fit = true) {
     if (s.lat == null || s.lon == null) return;
     const marker = L.marker([s.lat, s.lon], {
       icon: eventMapIcon(s),
-      title: s.title,
+      title: sourceText(s, "title"),
       zIndexOffset: Math.max(0, Number(s.severity) || 0) * 250,
     });
     let popup =
-      `<strong>${escapeHtml(s.title)}</strong><br>` +
-      `<span style="font-family:monospace;font-size:11px">${s.category} · sev ${s.severity} · ${s.country || ""} · ${s.reliability || ""}</span><br>` +
+      `<strong>${escapeHtml(sourceText(s, "title"))}</strong><br>` +
+      `<span>${escapeHtml(formatCategory(s.category))} · ${SEVERITY_LABELS[s.severity] || "Unrated"} · ${escapeHtml(s.country || "Approximate location")}</span><br>` +
       `<a href="${safeUrl(s.url)}" target="_blank" rel="noopener">source ↗</a><br>${evidenceButton(s.id)}`;
     if (s.cluster_size > 1) {
-      popup += `<div class="cluster-sources">Also reported by ${s.cluster_size - 1} other source(s): ${escapeHtml((s.also_reported_by || []).join(", "))}</div>`;
+      popup += `<div class="cluster-sources">${s.cluster_size - 1} related article(s) · may repeat the same account</div>`;
     }
     marker.bindPopup(popup);
     marker.on("click", () => selectEvent(s.id, true));
@@ -180,6 +180,57 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function plainReporting(value) {
+  const decoder = document.createElement("textarea");
+  let text = String(value || "");
+  for (let i = 0; i < 2; i++) {
+    decoder.innerHTML = text.replace(/<[^>]*>/g, " ");
+    text = decoder.value;
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
+const browserTranslations = new Map();
+const sourceText = (s, field) => browserTranslations.get(s.id)?.[field] || plainReporting(s[field + "_en"] || s[field]);
+const browserCanTranslate = () => typeof window.Translator?.create === "function" &&
+  typeof window.LanguageDetector?.create === "function";
+const SEVERITY_LABELS = {1:"Low", 2:"Low", 3:"Medium", 4:"High", 5:"Critical"};
+
+async function translateReport(s, button) {
+  const status = button.closest("article").querySelector(".translation-status");
+  button.disabled = true;
+  status.textContent = "Preparing browser translation…";
+  let detector, translator;
+  try {
+    const title = plainReporting(s.title);
+    const summary = plainReporting(s.summary).slice(0, 800);
+    detector = await window.LanguageDetector.create();
+    const [language] = await detector.detect(`${title}\n${summary}`);
+    if (!language || ["en", "und"].includes(language.detectedLanguage)) {
+      status.textContent = "The browser could not identify a translation to offer.";
+      return;
+    }
+    translator = await window.Translator.create({sourceLanguage:language.detectedLanguage, targetLanguage:"en"});
+    const translated = {title:await translator.translate(title), summary:summary ? await translator.translate(summary) : ""};
+    if (browserTranslations.size >= 200) browserTranslations.delete(browserTranslations.keys().next().value);
+    browserTranslations.set(s.id, translated);
+    if (button.isConnected) {
+      const item = button.closest("article");
+      item.querySelector(".feed-title").textContent = translated.title;
+      const excerpt = item.querySelector(".feed-summary");
+      if (excerpt) excerpt.textContent = translated.summary.slice(0, 180) + (translated.summary.length > 180 ? "…" : "");
+      status.textContent = "Machine translated · original in Evidence";
+      button.hidden = true;
+    }
+  } catch (_) {
+    status.textContent = "Translation unavailable in this browser. The original is in Evidence.";
+  } finally {
+    detector?.destroy?.();
+    translator?.destroy?.();
+    button.disabled = false;
+  }
+}
+
 function safeUrl(value) {
   try {
     const url = new URL(value);
@@ -190,7 +241,7 @@ function safeUrl(value) {
 }
 
 function formatCategory(value) {
-  return (value || "unclassified").replaceAll("_", " ");
+  return (value || "other reporting").replaceAll("_", " ");
 }
 
 function updateAoHeader() {
@@ -212,7 +263,7 @@ function updateOverview(sigacts) {
 // ---------------------------------------------------------------------
 async function fetchJson(path, options) {
   const res = await fetch(`${API_BASE}${path}`, options);
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`${path} -> ${res.status}`), { status: res.status });
   if (res.status === 204) return null;
   return res.json();
 }
@@ -260,6 +311,28 @@ async function refreshSigActs() {
   }
 }
 
+function resetScopedView(regionChanged) {
+  resetReportingTimeline();
+  plotSigActs([], false);
+  document.getElementById("feedList").textContent = "Loading reporting…";
+  document.getElementById("feedCount").textContent = "Loading…";
+  for (const id of ["kpiEvents", "kpiCritical", "kpiMapped"]) document.getElementById(id).textContent = "—";
+  document.getElementById("synStrategic").textContent = "Loading synopsis…";
+  document.getElementById("synOperational").textContent = "—";
+  document.getElementById("synTactical").textContent = "—";
+  const synopsisMeta = document.getElementById("synopsisMeta");
+  synopsisMeta.textContent = WINDOW_LABELS[state.window];
+  synopsisMeta.removeAttribute("title");
+  synopsisMeta.classList.remove("is-stale");
+  if (!regionChanged) return;
+  document.getElementById("evidenceDrawer").close();
+  document.getElementById("briefHistory").replaceChildren(new Option("Latest", "latest"));
+  document.getElementById("kpiSources").textContent = "—";
+  document.getElementById("sourcesList").replaceChildren();
+  document.getElementById("sourceCoverage").textContent = "Loading regional feed coverage…";
+  map?.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao], {animate:false});
+}
+
 let synopsisRequest = 0;
 async function refreshSynopsis() {
   const request = ++synopsisRequest;
@@ -274,9 +347,10 @@ async function refreshSynopsis() {
     operationalEl.textContent = data.operational || "—";
     tacticalEl.textContent = data.tactical || "—";
     showFreshness(metaEl, data.generated_at, 8);
+    metaEl.textContent = `Window: ${WINDOW_LABELS[data.window] || WINDOW_LABELS[state.window]} · ${metaEl.textContent}`;
   } catch (e) {
     if (request !== synopsisRequest) return;
-    strategicEl.textContent = "No synopsis generated yet for this AO/window.";
+    strategicEl.textContent = e.status === 404 ? "No synopsis has been published for this region and window." : "The synopsis could not load. The dashboard will retry automatically.";
     operationalEl.textContent = "—";
     tacticalEl.textContent = "—";
     metaEl.textContent = "Update unavailable";
@@ -306,7 +380,16 @@ async function refreshBrief(briefId) {
   const path = briefId && briefId !== "latest"
     ? `/api/briefs/${briefId}`
     : `/api/brief/latest?ao=${state.ao}`;
-  if (path !== briefPdfSelection) updateBriefPdfLinks(null);
+  if (path !== briefPdfSelection) {
+    updateBriefPdfLinks(null);
+    el.textContent = "Loading regional brief…";
+    metaEl.textContent = "";
+    metaEl.removeAttribute("title");
+    metaEl.classList.remove("is-stale");
+    document.getElementById("briefNav").replaceChildren();
+    factBox.classList.add("hidden");
+    factBox.open = false;
+  }
   briefPdfSelection = path;
   try {
     const data = await fetchJson(path);
@@ -333,7 +416,7 @@ async function refreshBrief(briefId) {
   } catch (e) {
     if (request !== briefRequest) return;
     updateBriefPdfLinks(null);
-    el.textContent = "No analyst brief generated yet — the first generation cycle runs shortly after startup.";
+    el.textContent = e.status === 404 ? "No regional brief has been published for this selection." : "The regional brief could not load. The dashboard will retry automatically.";
     document.getElementById("briefNav").innerHTML = "";
     metaEl.textContent = "Update unavailable";
     metaEl.classList.add("is-stale");
@@ -363,11 +446,11 @@ function formatAudioTime(seconds) {
   return `${mins}:${String(value % 60).padStart(2, "0")}`;
 }
 
-function utcDate(value) {
-  return new Date(value + (value && value.endsWith("Z") ? "" : "Z"));
-}
+const ukDay = new Intl.DateTimeFormat("en-CA", {timeZone:"Europe/London", year:"numeric", month:"2-digit", day:"2-digit"});
+let audioRequest = 0;
 
 async function refreshAudioBrief(episodeId) {
+  const request = ++audioRequest;
   const title = document.getElementById("audioEpisodeTitle");
   const meta = document.getElementById("audioBriefMeta");
   const period = document.getElementById("audioPeriod");
@@ -380,13 +463,17 @@ async function refreshAudioBrief(episodeId) {
       ? `/api/audio-briefs/${episodeId}`
       : "/api/audio-brief/latest";
     const data = await fetchJson(path);
+    if (request !== audioRequest) return;
     const previousId = currentAudioEpisode && currentAudioEpisode.id;
     const previousAudioUrl = currentAudioEpisode && currentAudioEpisode.audio_url;
     currentAudioEpisode = data;
     title.textContent = data.title;
-    showFreshness(meta, data.generated_at, 30);
-    meta.textContent = `${formatAudioTime(data.duration_seconds)} · Four regional chapters · ${meta.textContent}`;
-    period.textContent = `${utcDate(data.period_start).toLocaleString()} to ${utcDate(data.period_end).toLocaleString()}`;
+    const latest = !episodeId || episodeId === "latest";
+    const previousEdition = latest && ukDay.format(new Date()) > data.episode_date;
+    const prefix = previousEdition ? "Today’s episode not yet available · Latest: " : "";
+    meta.textContent = `${prefix}${data.episode_date} edition · ${formatAudioTime(data.duration_seconds)} · Published ${formatUkTime(data.generated_at)}`;
+    meta.classList.toggle("is-stale", previousEdition);
+    period.textContent = `Reporting period: ${formatUkTime(data.period_start)} to ${formatUkTime(data.period_end)} · All four regions`;
     transcript.textContent = data.transcript || "No transcript is available.";
     download.disabled = !data.audio_url;
     if (data.audio_url && (previousId !== data.id || previousAudioUrl !== data.audio_url || !player.src)) {
@@ -409,9 +496,11 @@ async function refreshAudioBrief(episodeId) {
     });
     updateAudioChapter();
   } catch (e) {
+    if (request !== audioRequest) return;
     currentAudioEpisode = null;
-    title.textContent = "Awaiting first episode";
-    meta.textContent = "Daily four-AO update · ready by 07:00";
+    title.textContent = "Episode unavailable";
+    meta.textContent = e.status === 404 ? "No episode published for this selection" : "Could not check the episode. The dashboard will retry.";
+    meta.classList.add("is-stale");
     period.textContent = READ_ONLY ? "No episode is available right now. New episodes are published automatically." : "Generate the first episode now, or leave SENTINEL running for the morning schedule.";
     transcript.textContent = "No transcript is available yet.";
     chapters.innerHTML = "";
@@ -526,7 +615,7 @@ async function refreshHealth() {
     const collected = reportingDate(ingest?.last_success_at);
     const delayed = !Number.isFinite(collected) || !!ingest?.last_error || Date.now() - collected > 2 * 3600000;
     fresh.textContent = Number.isFinite(collected)
-      ? `${delayed ? "Collection delayed · " : ""}Last successful collection: ${formatUkTime(new Date(collected).toISOString())}${delayed ? " · Recent reporting may be incomplete." : ""}`
+      ? `${delayed ? "Collection delayed · " : ""}Last successful collection (all regions): ${formatUkTime(ingest.last_success_at)}${delayed ? " · Recent reporting may be incomplete." : ""}`
       : "Collection time unavailable · Recent reporting may be incomplete.";
     fresh.classList.toggle("is-stale", delayed);
     systemState.textContent = ingest && ingest.last_success_at
@@ -546,7 +635,7 @@ async function refreshHealth() {
     systemState.textContent = "Offline";
     document.getElementById("reportingFreshness").textContent = "Collection status unavailable · Recent reporting may be incomplete.";
     document.getElementById("reportingFreshness").classList.add("is-stale");
-    banner.textContent = `⚠ Backend unreachable at ${API_BASE}`;
+    banner.textContent = "Dashboard updates are temporarily unavailable. Retrying automatically.";
     banner.classList.remove("hidden");
   }
 }
@@ -560,22 +649,29 @@ function renderFeed(sigacts) {
     return;
   }
   list.innerHTML = sigacts.map((s) => {
-    const summary = (s.summary || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    const title = sourceText(s, "title");
+    const excerpt = sourceText(s, "summary");
+    const summary = excerpt.startsWith(title) ? "" : excerpt;
+    const related = Math.max(0, (s.cluster_size || 1) - 1);
     const open = expanded.has(String(s.id));
     return `
       <article data-event-id="${s.id}" class="feed-item ${s.severity >= 4 ? "feed-item-critical" : ""}">
         <svg class="feed-document" aria-hidden="true" width="20" height="22" viewBox="0 0 20 22" fill="none" stroke="currentColor"><path d="M4 1.5h8l5 5v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-17a1 1 0 0 1 1-1Z"/><path d="M12 2v5h5M6 10h8M6 13h8M6 16h6"/></svg>
-        <a class="feed-title" href="${safeUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.title)}</a>
+        <a class="feed-title" dir="auto" href="${safeUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>
         ${summary ? `<p class="feed-summary">${escapeHtml(summary.slice(0, 180))}${summary.length > 180 ? "…" : ""}</p>` : ""}
         <time class="feed-time" title="${formatUkTime(s.published_at)}">${timeAgo(s.published_at)}</time>
-        <button class="feed-details-toggle" type="button" aria-label="Details for this report" title="Report Details" aria-expanded="${open}" aria-controls="feed-details-${s.id}">⋯</button>
+        <button class="btn-ghost evidence-trigger feed-evidence" type="button" data-evidence-id="${Number(s.id)}" aria-label="Evidence for ${escapeHtml(title).replaceAll('"', '&quot;')}">Evidence</button>
+        <div class="feed-actions">
+          <button class="feed-details-toggle" type="button" aria-expanded="${open}" aria-controls="feed-details-${s.id}">Details</button>
+          ${related ? `<span class="meta">${related} related article${related === 1 ? "" : "s"}</span>` : ""}
+          ${s.original_language && browserCanTranslate() && !browserTranslations.has(s.id) ? `<button class="btn-ghost translate-report" data-id="${Number(s.id)}" type="button">Translate to English</button>` : ""}
+          ${s.original_language ? `<span class="meta translation-status" role="status">${browserTranslations.has(s.id) ? "Machine translated · original in Evidence" : "Original language"}</span>` : ""}
+        </div>
         <div class="feed-footer" id="feed-details-${s.id}"${open ? "" : " hidden"}>
-          <span class="severity-pill severity-${s.severity}">SEV ${s.severity}</span>
+          <span class="severity-pill severity-${s.severity}">${SEVERITY_LABELS[s.severity] || "Unrated"}</span>
           <span class="category-pill">${escapeHtml(formatCategory(s.category))}</span>
           <span>${escapeHtml(s.source_name || "Unknown source")}</span>
           <span>${escapeHtml(s.country || "Location unconfirmed")}</span>
-          ${s.cluster_size > 1 ? `<span>+${s.cluster_size - 1} related article${s.cluster_size > 2 ? "s" : ""}</span>` : ""}
-          ${evidenceButton(s.id)}
           ${followButton(s.id)}
           ${s.lat != null && s.lon != null ? `<button class="locate-btn" data-id="${s.id}">Locate</button>` : ""}
         </div>
@@ -588,6 +684,10 @@ function renderFeed(sigacts) {
       button.setAttribute("aria-expanded", String(!open));
       document.getElementById(button.getAttribute("aria-controls")).hidden = open;
     });
+  });
+  const byId = new Map(sigacts.map(article => [article.id, article]));
+  list.querySelectorAll(".translate-report").forEach(button => {
+    button.addEventListener("click", () => translateReport(byId.get(Number(button.dataset.id)), button));
   });
 
   list.querySelectorAll(".locate-btn").forEach((button) => {
@@ -648,7 +748,9 @@ function wireNotifyButton() {
 // ---------------------------------------------------------------------
 // Sources panel (CRUD)
 // ---------------------------------------------------------------------
+let sourcesRequest = 0;
 async function refreshSources() {
+  const request = ++sourcesRequest;
   const list = document.getElementById("sourcesList");
   const ao = state.ao;
   const coverageEl = document.getElementById("sourceCoverage");
@@ -658,13 +760,13 @@ async function refreshSources() {
       fetchJson(`/api/sources`),
       expanded ? fetchJson(`/api/source-coverage?ao=${encodeURIComponent(ao)}`).catch(() => null) : null,
     ]);
-    if (ao !== state.ao) return;
+    if (request !== sourcesRequest || ao !== state.ao) return;
     const enabled = sources.filter((s) => s.enabled);
-    const healthy = enabled.filter((s) => !s.last_error).length;
+    const healthy = enabled.filter((s) => s.last_fetched_at && !s.last_error).length;
     const relevant = enabled.filter((s) => s.ao === ao || s.ao === "GLOBAL" || coverage?.by_source[s.id]);
     const relevantHealthy = relevant.filter((s) => s.last_fetched_at && !s.last_error).length;
     document.getElementById("sourceSummary").textContent =
-      `${healthy}/${enabled.length} enabled sources healthy`;
+      `All regions: ${healthy}/${enabled.length} feeds fetched without errors`;
     document.getElementById("kpiSources").textContent = `${relevantHealthy}/${relevant.length}`;
     if (expanded) renderCoverage(coverageEl, coverage, relevant);
     list.innerHTML = relevant.map((s) => `
@@ -789,6 +891,7 @@ function refreshAll() {
 function wireControls() {
   document.querySelectorAll(".ao-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (state.ao === btn.dataset.ao) return;
       document.querySelectorAll(".ao-tab").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       document.querySelectorAll(".ao-tab").forEach((b) => b.removeAttribute("aria-current"));
@@ -796,14 +899,8 @@ function wireControls() {
       btn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
       state.ao = btn.dataset.ao;
       writeView();
-      resetReportingTimeline();
-      document.getElementById("evidenceDrawer").close();
-      markersLayer?.clearLayers();
-      markersById.clear();
-      document.getElementById("feedList").textContent = "Loading reporting…";
+      resetScopedView(true);
       document.getElementById("briefTitle").textContent = AO_META[state.ao].briefTitle;
-      document.getElementById("briefHistory").value = "latest";
-      if (map) map.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]);
       updateAoHeader();
       refreshSigActs();
       refreshSynopsis();
@@ -815,12 +912,13 @@ function wireControls() {
 
   document.querySelectorAll(".window-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (state.window === btn.dataset.window) return;
       document.querySelectorAll(".window-btn").forEach((b) => { b.classList.remove("active"); b.setAttribute("aria-pressed", "false"); });
       btn.classList.add("active");
       btn.setAttribute("aria-pressed", "true");
       state.window = btn.dataset.window;
       writeView();
-      resetReportingTimeline();
+      resetScopedView(false);
       updateAoHeader();
       refreshSigActs();
       refreshSynopsis();
@@ -909,13 +1007,13 @@ async function openEvidence(trigger) {
   try {
     const data = await fetchJson(`/api/events/${id}/evidence?ao=${encodeURIComponent(ao)}`);
     if (!drawer.open || request !== evidenceRequest || ao !== state.ao) return;
-    title.textContent = data.title;
+    title.textContent = plainReporting(data.title);
     markStoryRead(data, ao);
     status.textContent = "Related reporting, newest first. Repeated claims may come from the same underlying account.";
     timeline.innerHTML = data.articles.map(article => {
-      const excerpt = article.excerpt.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      const excerpt = plainReporting(article.excerpt);
       const url = safeUrl(article.url);
-      return `<li><div class="meta">${escapeHtml(article.publisher || "Publisher not listed")} · ${escapeHtml(formatUkTime(article.published_at))}</div><h4>${escapeHtml(article.title)}</h4>${excerpt ? `<p>${escapeHtml(excerpt)}</p>` : ""}${url !== "#" ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open original article ↗</a>` : ""}</li>`;
+      return `<li><div class="meta">${escapeHtml(article.publisher || "Publisher not listed")} · ${escapeHtml(formatUkTime(article.published_at))}</div><h4 dir="auto">${escapeHtml(plainReporting(article.title))}</h4>${excerpt ? `<p dir="auto">${escapeHtml(excerpt)}</p>` : ""}${url !== "#" ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open original article ↗</a>` : ""}</li>`;
     }).join("");
     if (data.older_count) older.textContent = `${data.older_count} older related article(s) not shown.`;
   } catch (_) {
@@ -983,6 +1081,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     [...manualControls, "addSourceBtn", "generateAudioBtn"].forEach((id) => document.getElementById(id)?.classList.remove("hidden"));
   }
   readView();
+  document.getElementById("mapIconKey").innerHTML = Object.entries({...MAP_EVENT_GLYPHS, other:MAP_DEFAULT_GLYPH})
+    .map(([category, glyph]) => `<li><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7">${glyph}</svg>${formatCategory(category)}</li>`).join("");
   initMap();
   wireControls();
   document.querySelector(".ao-tab.active")?.setAttribute("aria-current", "page");
@@ -994,7 +1094,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 function showFreshness(element, value, hours) {
   const stamp = reportingDate(value);
   const stale = !Number.isFinite(stamp) || Date.now() - stamp > hours * 3600000;
-  element.textContent = Number.isFinite(stamp) ? `${stale ? "Previous update" : "Updated"} ${formatUkTime(new Date(stamp).toISOString())}` : "Update unavailable";
+  element.textContent = Number.isFinite(stamp) ? `${stale ? "Earlier edition · Published" : "Published"} ${formatUkTime(value)}` : "Publication time unavailable";
   element.title = Number.isFinite(stamp) ? timeAgo(value) : "No update available";
   element.classList.toggle("is-stale", stale);
 }

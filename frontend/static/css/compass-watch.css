@@ -81,7 +81,7 @@ a { color: var(--accent); }
   --overview-height: clamp(450px, 38vw, 525px);
   max-width: var(--page-width); padding-inline: var(--gutter);
   grid-template-columns: minmax(310px, 2fr) minmax(0, 3fr);
-  grid-template-areas: "map synopsis" "feed feed" "audio audio" "brief brief" "sources sources";
+  grid-template-areas: "map synopsis" "feed feed" "audio audio" "combined combined" "brief brief" "sources sources";
   gap: 16px; align-items: stretch;
 }
 .panel { border-radius: 11px; }
@@ -165,7 +165,7 @@ a { color: var(--accent); }
   .mission-bar { grid-template-columns: minmax(0, 1fr); }
   .metric-grid { justify-self: start; grid-column: auto; }
   .metric-card:first-child { border-left: 0; padding-left: 0; }
-  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "synopsis" "feed" "audio" "brief" "sources"; }
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "synopsis" "map" "feed" "audio" "combined" "brief" "sources"; }
   .map-column { --overview-height: 420px; }
   .synopsis-panel { height: auto; }
 }
@@ -247,10 +247,10 @@ a { color: var(--accent); }
 .reporting-tools > details[open] { flex-basis: 100%; }
 .reporting-tools summary, .audio-options > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .reporting-tools .feed-filters { padding: 7px 0 2px; border: 0; }
-.feed-list { max-height: 190px; }
+.feed-list { max-height: 320px; }
 .feed-item:has(.feed-title) {
   display: grid; align-items: center;
-  grid-template-columns: 22px minmax(0, .85fr) minmax(0, 1.15fr) max-content 36px;
+  grid-template-columns: 22px minmax(0, .85fr) minmax(0, 1.15fr) max-content max-content;
   gap: 4px 12px; padding: 9px 14px 9px 19px;
 }
 .feed-document { grid-area: 1 / 1; color: #adc5d5; }
@@ -289,18 +289,43 @@ a { color: var(--accent); }
 }
 @media (max-width: 990px) {
   .metric-grid { flex-wrap: wrap; }
-  .feed-item:has(.feed-title) { grid-template-columns: 20px minmax(0, 1fr) max-content 36px; }
+  .feed-item:has(.feed-title) { grid-template-columns: 20px minmax(0, 1fr) max-content max-content; }
   .feed-summary { grid-area: 2 / 2 / auto / -1; border: 0; padding: 0; }
   .feed-time { grid-area: 1 / 3; }
   .feed-details-toggle { grid-area: 1 / 4; }
 }
+
+.combined-report-panel { grid-area: combined; }
+.collection-status { margin: 6px 0 0; }
+.collection-status.is-stale { color: #ffc588; }
+#periodControls { display: grid; gap: 2px; }
+.workspace-toolbar { flex-wrap: wrap; }
+.workspace-toolbar a { padding: 5px 2px; }
+.mobile-map-jump { display: none; }
+.skip-links { position: absolute; z-index: 1200; }
+.skip-links a:not(:focus) { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
+.skip-links a:focus { display: inline-block; padding: 10px; background: var(--surface); color: var(--text); }
+.feed-item > .feed-evidence { grid-area: 1 / 5; min-height: 36px; white-space: nowrap; }
+.feed-details-toggle { display: inline; min-height: 32px; padding: 0 6px; font-size: 12px; }
+.feed-actions { grid-column: 2 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+#mapIconKey { display: flex; flex-wrap: wrap; gap: 6px 12px; list-style: none; padding: 0; }
+#mapIconKey li { display: inline-flex; align-items: center; gap: 5px; text-transform: capitalize; }
+#mapIconKey svg { width: 18px; height: 18px; color: var(--accent); }
+@media (max-width: 990px) {
+  .mobile-map-jump { display: inline; }
+  .feed-title { grid-column: 2 / -1; }
+  .feed-item > .feed-evidence { grid-area: 3 / 4; }
+  .feed-time { grid-area: 3 / 3; }
+  .feed-actions { grid-area: 3 / 2; gap: 3px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 @media (max-width: 700px) {
   .topbar::before { opacity: .1; }
   .mission-bar { padding-block: 13px; }
   #periodControls { grid-column: 1 / -1; margin: 4px 0 0; }
   .workspace-toolbar { justify-content: start; }
   .reporting-head-meta { justify-content: start; }
-  .feed-list { max-height: 290px; }
+  .feed-list { max-height: 390px; }
   .feed-item:has(.feed-title) { padding-left: 13px; column-gap: 7px; }
   .audio-strip { grid-template-columns: minmax(0, 1fr); padding-inline: 14px; }
   .audio-options { padding-inline: 14px; }

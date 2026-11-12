@@ -34,7 +34,10 @@ never invent events, figures, or attributions not in the source material.
 Write the intelligence, not the collection process. Do not state source counts, \
 event counts, severity totals, reliability-tier totals or phrases such as \
 "the reporting set contains". Use that metadata internally to calibrate confidence. \
-Lead with what changed, what it means for the AO and the likely near-term direction. \
+Lead with what materially changed within the named window, and explain why it \
+matters now. Distinguish new events from follow-up coverage of earlier events. \
+Use British English and translate or paraphrase non-English reporting without \
+inventing details. Leave developed forecasts and warning indicators to the daily brief. \
 The prose must read as if drafted by an experienced defence analyst, with facts \
 and assessment integrated naturally rather than presented as dashboard statistics.
 
@@ -119,13 +122,15 @@ def _extract_json(raw: str) -> dict:
     return {}
 
 
-def _window_articles(db: Session, ao: str, days: float):
-    since = datetime.utcnow() - timedelta(days=days)
+def _window_articles(db: Session, ao: str, days: float, cutoff: datetime | None = None):
+    cutoff = cutoff or datetime.utcnow()
+    since = cutoff - timedelta(days=days)
     articles = (
         db.query(Article)
         .filter(
             Article.ao == ao,
             Article.published_at >= since,
+            Article.published_at <= cutoff,
             Article.is_sigact == True,          # noqa: E712
             Article.is_cluster_primary == True,
         )
@@ -495,11 +500,9 @@ def _fallback_window_assessment(articles: list[Article], window: str, days: floa
     count = len(articles)
     if not articles:
         return (
-            f"No material change was identified during the {window} period. The established regional security posture remains in place, "
-            "and the absence of a new significant development does not by itself indicate a reduction in the underlying threat.",
-            "The operating picture remains consistent with the previously established baseline. No new development warrants a change to the current operational judgement or readiness posture.",
-            "No material change. Maintain routine awareness for a change in military posture, a corroborated security incident, "
-            "or renewed pressure against critical infrastructure and border systems.",
+            f"No material change was identified in the available reporting for the {window} window. This does not establish that the threat has diminished.",
+            "The available information does not support a revised operating picture.",
+            "No specific tactical development can be substantiated for this window.",
         )
 
     categories = Counter((a.category or "security reporting").replace("_", " ") for a in articles)
@@ -554,7 +557,8 @@ def _fallback_window_assessment(articles: list[Article], window: str, days: floa
 
 def generate_ao_synopses(db: Session, ao: str) -> list:
     """Generate all windows compactly, with two smaller calls as recovery."""
-    window_articles = {w: _window_articles(db, ao, days) for w, days in WINDOWS.items()}
+    cutoff = datetime.utcnow()
+    window_articles = {w: _window_articles(db, ao, days, cutoff) for w, days in WINDOWS.items()}
     try:
         parsed = _request_synopsis_windows(ao, window_articles, WINDOWS)
     except Exception as initial_exc:  # noqa: BLE001
@@ -601,7 +605,7 @@ def generate_fallback_ao_synopses(db: Session, ao: str) -> list:
     results = []
     generated_at = datetime.utcnow()
     for window, days in WINDOWS.items():
-        articles = _window_articles(db, ao, days)
+        articles = _window_articles(db, ao, days, generated_at)
         count = len(articles)
         strategic, operational, tactical = _fallback_window_assessment(
             articles, window, days

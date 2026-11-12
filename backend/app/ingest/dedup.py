@@ -18,6 +18,7 @@ from difflib import SequenceMatcher
 from sqlalchemy.orm import Session
 
 from app.models import Article
+from app.reporting import clean_text, publisher_name
 
 CLUSTER_WINDOW_HOURS = 36
 SIMILARITY_THRESHOLD = 0.55
@@ -30,8 +31,15 @@ _STOPWORDS = {
 
 
 def _normalize(title: str) -> str:
-    words = re.findall(r"[a-z0-9]+", title.lower())
+    words = re.findall(r"[^\W_]+", clean_text(title).casefold())
     return " ".join(w for w in words if w not in _STOPWORDS)
+
+
+def _headline(article: Article) -> str:
+    title = clean_text(article.title)
+    name = publisher_name(article)
+    suffix = f" - {name}" if name else ""
+    return _normalize(title[:-len(suffix)] if suffix and title.endswith(suffix) else title)
 
 
 def assign_cluster(db: Session, article: Article):
@@ -55,10 +63,13 @@ def assign_cluster(db: Session, article: Article):
         .all()
     )
 
-    norm_new = _normalize(article.title)
+    norm_new = _headline(article)
     best_match, best_ratio = None, 0.0
     for cand in candidates:
-        ratio = SequenceMatcher(None, norm_new, _normalize(cand.title)).ratio()
+        candidate = _headline(cand)
+        if not norm_new or not candidate:
+            continue
+        ratio = SequenceMatcher(None, norm_new, candidate).ratio()
         if ratio > best_ratio:
             best_match, best_ratio = cand, ratio
 

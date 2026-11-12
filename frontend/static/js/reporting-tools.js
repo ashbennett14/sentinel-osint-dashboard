@@ -183,14 +183,14 @@ function wireReportingTools() {
     catch (_) { status.textContent = "Copy the view link from your address bar."; }
   });
   window.addEventListener("popstate", () => {
-    document.getElementById("evidenceDrawer").close();
+    const previousAo = state.ao;
+    const previousWindow = state.window;
     readView();
-    resetReportingTimeline();
-    markersLayer?.clearLayers();
-    markersById.clear();
-    document.getElementById("feedList").textContent = "Loading reporting…";
-    document.getElementById("briefHistory").value = "latest";
-    if (map) map.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao]);
+    if (previousAo !== state.ao || previousWindow !== state.window) {
+      resetScopedView(previousAo !== state.ao);
+    } else {
+      resetReportingTimeline();
+    }
     updateAoHeader();
     refreshAll();
   });

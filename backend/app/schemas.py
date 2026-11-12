@@ -18,6 +18,7 @@ class SigActOut(BaseModel):
     severity: int
     source_name: Optional[str] = None
     reliability: Optional[str] = None
+    original_language: bool = False
     cluster_size: int = 1
     also_reported_by: List[str] = Field(default_factory=list)
 

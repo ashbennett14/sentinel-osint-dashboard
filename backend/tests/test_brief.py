@@ -39,6 +39,13 @@ def test_source_link_rejects_non_web_schemes():
     assert _source_link(article) == "Source: Example News (link unavailable)."
 
 
+def test_source_link_names_the_publisher_not_the_monitor():
+    article = SimpleNamespace(title="Article headline - Original Publisher",
+                              url="https://news.google.com/rss/articles/123",
+                              source=SimpleNamespace(name="Regional Watch"))
+    assert _source_link(article) == "Source: [Original Publisher](https://news.google.com/rss/articles/123)."
+
+
 def test_validate_brief_rejects_cross_ao_reference():
     content = _complete_brief() + "\nAO BALKANS"
     with pytest.raises(ValueError, match="crossed the AO boundary"):

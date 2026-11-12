@@ -75,6 +75,39 @@ def test_stale_unavailable_and_quiet_are_distinct(db):
     assert result["collection_state"] == "current" and not result["items"]
 
 
+def test_reporting_groups_followups_even_when_primary_is_outside_window(db):
+    now = datetime.utcnow()
+    for id, ao, hours, primary, title in [
+        (81, AO, 30, True, "Original article"),
+        (82, AO, 2, False, "Follow-up &amp; analysis - Actual Publisher"),
+        (83, AO, 3, False, "Earlier follow-up"),
+        (84, "AO_LEVANT", 1, True, "Unrelated region"),
+        (85, AO, -1, True, "Future timestamp"),
+    ]:
+        db.add(Article(id=id, ao=ao, source_id=1, title=title, cluster_key="shared",
+                       url=f"https://news.google.com/rss/articles/{id}",
+                       summary="<p>Some &amp;nbsp; text</p>", published_at=now - timedelta(hours=hours),
+                       is_sigact=True, processed=True, is_cluster_primary=primary, severity=2))
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        client = TestClient(app)
+        response = client.get("/api/sigacts", params={"ao": AO, "window": "24h"})
+        assert response.status_code == 200
+        [item] = response.json()
+        assert item["id"] == 82
+        assert item["cluster_size"] == 3
+        assert item["source_name"] == "Actual Publisher"
+        assert item["summary"] == "Some text"
+        evidence = client.get("/api/events/82/evidence", params={"ao": AO}).json()
+        assert [a["id"] for a in evidence["articles"]] == [82, 83, 81]
+        assert evidence["articles"][0]["publisher"] == "Actual Publisher"
+        [wide] = client.get("/api/sigacts", params={"ao": AO, "window": "48h"}).json()
+        assert wide["id"] == 81
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
 def test_source_coverage_counts_located_and_unlocated_recent_ao_articles(db):
     now = datetime.utcnow()
     rows = [

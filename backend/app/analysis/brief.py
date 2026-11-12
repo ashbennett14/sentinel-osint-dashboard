@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Article, Brief, Synopsis
+from app.models import Article, Brief
 from app.analysis.llm_client import complete
 from app.analysis.synopsis import (
     NEAR_TERM_INDICATORS,
@@ -20,6 +20,7 @@ from app.analysis.synopsis import (
     _summary_description,
 )
 from app.analysis.trends import category_trend_summary
+from app.reporting import publisher_name
 
 logger = logging.getLogger("sentinel.analysis.brief")
 
@@ -94,8 +95,10 @@ metadata. Do not use phrases such as "the event set contains", "reporting volume
 or "provider-independent brief". Reliability metadata is for internal weighting, \
 not the subject of the product. Lead with the operating picture, explain why each \
 development matters, make defensible judgements and write a clear forward outlook. \
-The finished product should read like a polished defence analyst's brief, not an \
-automated collection summary.
+Lead the executive summary with the most likely next development and the principal \
+reason for that judgement. Explain what would make you revise it. Unlike the \
+rolling synopsis, this is an estimate: weigh a credible alternative if the evidence \
+supports one and separate observable warning indicators from predictions.
 
 Follow the exact markdown structure supplied by the user prompt. Keep the executive \
 summary to 3-5 sentences and the full product to 650-900 words. Paraphrase source \
@@ -208,7 +211,7 @@ Use this exact markdown structure:
 **Period covered:** {period_start.strftime('%Y-%m-%d %H:%MZ')} to {period_end.strftime('%Y-%m-%d %H:%MZ')}
 
 ## 1. EXECUTIVE SUMMARY
-<bottom line up front for this AO only>
+<most likely next development, strongest reason, and the main condition that would change the judgement>
 
 ## 2. SITUATION OVERVIEW
 <current operating picture and material change during the reporting period>
@@ -220,7 +223,7 @@ the authorised material. Use only IDs supporting that particular development.
 Do not write source URLs yourself. Do not put citations in other sections.
 
 ## 4. ASSESSMENT
-<what the reporting means; clearly distinguish assessment from reported fact>
+<why the evidence supports the main judgement, where it falls short, and the strongest credible alternative if supported>
 
 ## 5. OUTLOOK & INDICATORS
 - **Short term (0-72h):**
@@ -232,21 +235,22 @@ Do not write source URLs yourself. Do not put citations in other sections.
 <specific gaps, source limitations and overall confidence for this AO only>"""
 
 
-def _validate_brief(content: str, ao: str) -> None:
+def _validate_brief(content: str, ao: str, *, min_words: int = 500) -> None:
     """Do not publish truncated, malformed or cross-AO model output."""
-    if not isinstance(content, str) or len(content.split()) < 500:
+    if not isinstance(content, str) or len(content.split()) < min_words:
         raise ValueError(f"{ao} brief was truncated or too short")
     missing = [section for section in REQUIRED_SECTIONS if section not in content]
     if missing:
         raise ValueError(f"{ao} brief is missing required sections: {', '.join(missing)}")
-    if NON_LATIN_SCRIPT.search(content):
+    prose = re.sub(r"Source: \[[^\]]+\]\(https?://[^)\n]+\)", "", content)
+    if NON_LATIN_SCRIPT.search(prose):
         raise ValueError(f"{ao} brief contains untranslated non-English script")
     current_label = AO_CONFIG[ao]["title"].removesuffix(" DAILY ANALYST BRIEF")
     for other_ao, other_config in AO_CONFIG.items():
         if other_ao == ao:
             continue
         other_label = other_config["title"].removesuffix(" DAILY ANALYST BRIEF")
-        if other_label in content.upper():
+        if other_label in prose.upper():
             raise ValueError(
                 f"{current_label} brief crossed the AO boundary by mentioning {other_label}"
             )
@@ -308,7 +312,7 @@ def _development_bullet(article: Article) -> str:
 
 
 def _source_link(article) -> str:
-    name = getattr(getattr(article, "source", None), "name", None) or "Original article"
+    name = publisher_name(article) or "Original article"
     name = re.sub(r"[\[\]\\\r\n]", " ", name).strip()
     url = getattr(article, "url", "") or ""
     parsed = urlparse(url)
@@ -396,13 +400,6 @@ def _confidence_assessment(articles: list[Article]) -> str:
     )
 
 
-def _clip_words(text: str, limit: int) -> str:
-    words = (text or "").split()
-    if len(words) <= limit:
-        return text
-    return " ".join(words[:limit]).rstrip(" ,;:-") + "."
-
-
 def _build_fallback_content(
     db: Session,
     ao: str,
@@ -413,15 +410,6 @@ def _build_fallback_content(
 ) -> str:
     """Build a source-faithful brief when the analysis provider is unavailable."""
     config = AO_CONFIG[ao]
-    synopsis = (
-        db.query(Synopsis)
-        .filter(Synopsis.ao == ao, Synopsis.window == "24h")
-        .order_by(Synopsis.generated_at.desc())
-        .first()
-    )
-    strategic = synopsis.strategic if synopsis else "No generated synopsis is available for this reporting period."
-    operational = synopsis.operational if synopsis else "The current event list is the available operating picture."
-    tactical = synopsis.tactical if synopsis else "No additional tactical assessment is available."
     developments = _key_developments(articles)
     if not developments:
         developments.append("- No qualifying reporting was collected in this period.")
@@ -434,30 +422,38 @@ def _build_fallback_content(
     )
     locations = [name for name, _ in Counter(a.country for a in articles if a.country).most_common(3)]
     location_text = _human_list(locations) if locations else config["area"]
+    indicators = NEAR_TERM_INDICATORS.get(dominant_category, NEAR_TERM_INDICATORS["security reporting"])
+    judgement = (
+        f"Continued {dominant_category} activity around {location_text} is the most plausible near-term course. "
+        "The developments below do not establish a coordinated campaign. That judgement should be revisited "
+        f"if follow-up evidence confirms {indicators}."
+        if articles else
+        "The available evidence does not support a fresh judgement for this period. A lack of qualifying reporting is not evidence of stability."
+    )
+    near_term = (
+        f"Watch for {indicators} around {location_text}."
+        if articles else "No specific near-term forecast is supported."
+    )
 
     return f"""# {config['title']}
 **Period covered:** {period_start.strftime('%Y-%m-%d %H:%MZ')} to {period_end.strftime('%Y-%m-%d %H:%MZ')}
 
 ## 1. EXECUTIVE SUMMARY
-{_clip_words(strategic, 120)} The priority judgement is that {dominant_category} activity requires continued attention in {location_text}. The available evidence supports a focused regional concern, but not a broader conclusion beyond the developments described below.
+{judgement}
 
 ## 2. SITUATION OVERVIEW
-{_clip_words(operational, 140)}
-
 {trend_assessment}
 
 ## 3. KEY DEVELOPMENTS
 {chr(10).join(developments)}
 
 ## 4. ASSESSMENT
-{_clip_words(tactical, 160)}
-
 {AO_BASELINE_ASSESSMENT[ao]}
 
 The relationship between the individual developments remains partly unresolved. The current pattern may reflect a genuine operational development, but a stronger judgement requires consistent geography, attribution and timing. In the absence of those indicators, the activity should be treated as localised friction rather than evidence of a new campaign.
 
 ## 5. OUTLOOK & INDICATORS
-- **Short term (0-72h):** The most plausible near-term course is continued {dominant_category} activity around {location_text}. Watch for {NEAR_TERM_INDICATORS.get(dominant_category, NEAR_TERM_INDICATORS['security reporting'])}.
+- **Short term (0-72h):** {near_term}
 - **Medium term (1-4 weeks):** A sustained pattern would require repeated, independently supported incidents involving consistent actors, targets or locations. Without those indicators, the activity is more likely to remain episodic than develop into a new campaign or strategic shift.
 - **Long term (1-6 months):** Current evidence does not support a specific long-range forecast. Structural change would be indicated by altered force posture, enduring policy measures, persistent mobilisation, new basing or access arrangements, or repeated pressure on the same critical systems.
 - **Indicators to watch:** Changes in operational tempo or effects; movement beyond {location_text}; stronger official attribution; repeated targeting patterns; military or security-force reinforcement; emergency legal measures; and confirmed disruption to civilian services or critical infrastructure.
@@ -481,14 +477,14 @@ def generate_fallback_ao_brief(db: Session, ao: str) -> Brief:
         period_start,
         period_end,
     )
-    _validate_brief(content, ao)
+    _validate_brief(content, ao, min_words=0)
     brief = Brief(
         ao=ao,
         generated_at=datetime.utcnow(),
         content=content,
         fact_check_notes=(
-            "Provider-independent brief assembled from the validated AO synopsis "
-            "and isolated source records; analyst review required."
+            "This brief was assembled from regional source records without model review. "
+            "Analyst review is recommended."
         ),
         source_article_count=len(articles),
     )

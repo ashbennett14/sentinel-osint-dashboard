@@ -6,8 +6,8 @@ from typing import Optional, List
 from fastapi import BackgroundTasks, FastAPI, Depends, Query, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, Response
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import String, cast, func, tuple_
 
 from app.config import settings
 from app.ao import VALID_AOS
@@ -30,6 +30,7 @@ from app.scheduler import (
 )
 from app.analysis.audio_brief import audio_path_for
 from app.storage import public_audio_url
+from app.reporting import clean_text, may_need_translation, publisher_name
 
 logging.basicConfig(level=settings.LOG_LEVEL)
 logger = logging.getLogger("sentinel.main")
@@ -108,7 +109,10 @@ def runtime_config():
 
 def _sigact_to_out(a: Article) -> SigActOut:
     item = SigActOut.model_validate(a)
-    item.source_name = a.source.name if a.source else None
+    item.source_name = publisher_name(a)
+    item.title = clean_text(a.title)
+    item.summary = clean_text(a.summary)
+    item.original_language = may_need_translation(a.title, a.summary)
     item.reliability = a.source.reliability if a.source else None
     return item
 
@@ -125,12 +129,13 @@ def get_sigacts(
         raise HTTPException(400, "window must be one of 24h, 48h, 7d, 30d")
     if ao and ao not in VALID_AOS:
         raise HTTPException(400, "invalid AO")
-    since = datetime.utcnow() - timedelta(hours=WINDOW_HOURS[window])
+    now = datetime.utcnow()
+    since = now - timedelta(hours=WINDOW_HOURS[window])
 
     query = db.query(Article).filter(
         Article.is_sigact == True,           # noqa: E712
-        Article.is_cluster_primary == True,  # one marker per real-world event
         Article.published_at >= since,
+        Article.published_at <= now,
     )
     if ao:
         query = query.filter(Article.ao == ao)
@@ -142,19 +147,33 @@ def get_sigacts(
             (Article.title.ilike(like)) | (Article.summary.ilike(like))
         )
 
-    primaries = query.order_by(Article.published_at.desc()).limit(500).all()
+    # Pick one matching member per regional cluster, even if its original
+    # representative is older than the selected reporting window.
+    rank = func.row_number().over(
+        partition_by=(Article.ao, func.coalesce(Article.cluster_key, "article:" + cast(Article.id, String))),
+        order_by=(Article.is_cluster_primary.desc().nulls_last(), Article.published_at.desc(), Article.id.desc()),
+    )
+    ranked = query.with_entities(Article.id.label("article_id"), rank.label("position")).subquery()
+    primaries = (
+        db.query(Article).join(ranked, ranked.c.article_id == Article.id)
+        .filter(ranked.c.position == 1).options(joinedload(Article.source))
+        .order_by(Article.published_at.desc(), Article.id.desc()).limit(500).all()
+    )
+    groups = {(a.ao, a.cluster_key): [] for a in primaries if a.ao and a.cluster_key}
+    if groups:
+        for member in db.query(Article).filter(
+            tuple_(Article.ao, Article.cluster_key).in_(list(groups)),
+            Article.is_sigact.is_(True), Article.published_at <= now,
+        ).options(joinedload(Article.source)):
+            groups[(member.ao, member.cluster_key)].append(member)
 
     out = []
     for a in primaries:
         item = _sigact_to_out(a)
         if a.cluster_key:
-            others = (
-                db.query(Article)
-                .filter(Article.cluster_key == a.cluster_key, Article.id != a.id)
-                .all()
-            )
+            others = [o for o in groups.get((a.ao, a.cluster_key), []) if o.id != a.id]
             item.cluster_size = 1 + len(others)
-            item.also_reported_by = [o.source.name for o in others if o.source]
+            item.also_reported_by = sorted({name for o in others if (name := publisher_name(o))})
         out.append(item)
     return out
 

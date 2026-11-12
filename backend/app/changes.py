@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.models import Article, SystemStatus
+from app.reporting import publisher_name
 
 
 def utc_iso(value):
@@ -24,7 +25,8 @@ def _public_url(value):
 
 
 def _publisher(article):
-    return article.source.name.strip() if article.source and article.source.name.strip() else None
+    name = publisher_name(article)
+    return name.strip() or None if name else None
 
 
 def _event_key(article):

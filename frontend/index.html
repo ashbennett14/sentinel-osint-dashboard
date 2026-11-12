@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="static/css/dashboard.css?v=20261111-3">
-<link rel="stylesheet" href="static/css/compass-watch.css?v=9">
+<link rel="stylesheet" href="static/css/compass-watch.css?v=10">
 </head>
 <body>
 
@@ -57,10 +57,12 @@
 </header>
 
 <div class="dashboard-workspace">
+<div class="skip-links"><a href="#synopsisTitle">Skip to synopsis</a><a href="#reportingTitle">Skip to reporting</a></div>
 <section class="mission-bar" aria-labelledby="aoTitle">
   <div class="mission-copy">
     <h1 id="aoTitle">High North, Finland &amp; the Baltics</h1>
     <p id="aoDescription">Arctic, Nordic and Baltic security · Infrastructure, military posture and regional activity</p>
+    <p id="reportingFreshness" class="meta collection-status" role="status">Checking collection freshness…</p>
   </div>
   <div class="metric-grid" aria-label="Current intelligence summary">
     <div class="metric-card">
@@ -79,32 +81,58 @@
       <span class="metric-detail">plotted events</span>
     </div>
     <div class="metric-card">
-      <span class="metric-label">Healthy feeds</span>
+      <span class="metric-label" title="Regional and global feeds with a successful last fetch; not the age or completeness of reporting">Feeds without errors</span>
       <strong id="kpiSources">—</strong>
       <span class="metric-detail">healthy sources</span>
     </div>
-    <div id="periodControls" role="group" aria-label="Reporting period" title="Applies to the map, synopsis and latest reporting">
+    <div id="periodControls" role="group" aria-labelledby="windowLabel" aria-describedby="windowScope">
+      <span id="windowLabel" class="meta">Reporting window</span>
       <div class="window-toggle" id="windowToggle">
         <button class="window-btn active" data-window="24h" aria-label="24 hours">24h</button>
         <button class="window-btn" data-window="48h" aria-label="48 hours">48h</button>
         <button class="window-btn" data-window="7d" aria-label="7 days">7d</button>
         <button class="window-btn" data-window="30d" aria-label="30 days">30d</button>
       </div>
+      <span id="windowScope" class="meta">Synopsis, map &amp; reporting only</span>
     </div>
   </div>
   <div class="workspace-toolbar">
     <button id="shareView" class="btn-ghost" type="button">Copy view link</button>
     <span id="shareStatus" class="meta" role="status"></span>
-    <a href="#briefPanel">Daily brief ↓</a>
+    <a href="#briefTitle">Regional brief</a>
+    <a href="#audioBriefTitle">Listen</a>
+    <a href="#combinedReportTitle">All-region PDF</a>
+    <a class="mobile-map-jump" href="#mapTitle">Jump to map</a>
   </div>
 </section>
 
 <main class="layout">
 
+  <section class="panel synopsis-panel">
+    <div class="panel-head">
+      <h2 id="synopsisTitle" tabindex="-1">Situation Synopsis</h2>
+      <span id="synopsisMeta" class="meta mono"></span>
+    </div>
+    <div class="synopsis-body">
+      <div class="synopsis-tier">
+        <h3 class="tier-label">Strategic</h3>
+        <p id="synStrategic" class="tier-text">Loading synopsis…</p>
+      </div>
+      <div class="synopsis-tier">
+        <h3 class="tier-label">Operational</h3>
+        <p id="synOperational" class="tier-text">—</p>
+      </div>
+      <div class="synopsis-tier">
+        <h3 class="tier-label">Tactical</h3>
+        <p id="synTactical" class="tier-text">—</p>
+      </div>
+    </div>
+  </section>
+
   <div class="map-column">
   <section class="panel map-panel">
     <div class="panel-head map-toolbar">
-      <h2>Regional Activity</h2>
+      <h2 id="mapTitle" tabindex="-1">Regional Activity</h2>
       <div class="map-actions" role="group" aria-label="Map controls">
         <button id="mapLabelsBtn" class="btn-ghost" type="button" aria-label="Terrain map" title="Terrain map" aria-pressed="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m2 19 6-10 4 6 4-10 6 14H2Z"/></svg>
@@ -133,35 +161,18 @@
       <span class="legend-item"><i class="dot sev-3"></i>Medium</span>
       <span class="legend-item"><i class="dot sev-2"></i>Low</span>
     </div>
+    <details id="mapKey" class="timeline-controls">
+      <summary>Map key</summary>
+      <p class="meta">The icon shows the event type. The ring shows estimated severity, not certainty. Locations are approximate.</p>
+      <ul id="mapIconKey"></ul>
+    </details>
   </section>
   </div>
-
-  <section class="panel synopsis-panel">
-    <div class="panel-head">
-      <h2 id="synopsisTitle">Situation Synopsis</h2>
-      <span id="synopsisMeta" class="meta mono"></span>
-    </div>
-    <div class="synopsis-body">
-      <div class="synopsis-tier">
-        <h3 class="tier-label">Strategic</h3>
-        <p id="synStrategic" class="tier-text">Awaiting first generation cycle…</p>
-      </div>
-      <div class="synopsis-tier">
-        <h3 class="tier-label">Operational</h3>
-        <p id="synOperational" class="tier-text">—</p>
-      </div>
-      <div class="synopsis-tier">
-        <h3 class="tier-label">Tactical</h3>
-        <p id="synTactical" class="tier-text">—</p>
-      </div>
-    </div>
-  </section>
 
   <section class="panel feed-panel">
     <div class="panel-head">
       <h2 id="reportingTitle" tabindex="-1">Latest Reporting</h2>
       <div class="reporting-head-meta">
-        <span id="reportingFreshness" class="meta" role="status">Checking collection freshness…</span>
         <span id="feedCount" class="meta mono" aria-live="polite">Loading…</span>
       </div>
     </div>
@@ -200,8 +211,8 @@
       <div class="audio-heading">
         <div class="audio-cover"><img src="static/img/compass-watch.svg" alt="" width="44" height="44"></div>
         <div>
-          <h2 id="audioBriefTitle">The Morning Briefing</h2>
-          <span id="audioBriefMeta" class="meta mono">Daily four-AO update · ready by 07:00</span>
+          <h2 id="audioBriefTitle" tabindex="-1">The Morning Briefing</h2>
+          <span id="audioBriefMeta" class="meta mono">Checking for the latest episode…</span>
         </div>
       </div>
       <div id="audioTransport" class="audio-transport hidden">
@@ -238,9 +249,9 @@
     </details>
   </section>
 
-  <section class="panel" aria-labelledby="combinedReportTitle">
+  <section class="panel combined-report-panel" aria-labelledby="combinedReportTitle">
     <div class="panel-head">
-      <h2 id="combinedReportTitle">Daily Intelligence Report</h2>
+      <h2 id="combinedReportTitle" tabindex="-1">Daily Intelligence Report</h2>
       <a class="btn-ghost brief-pdf-link" href="reports/sentinel-daily-intelligence-report-2026-11-12.pdf" download aria-label="Download the 12 November 2026 Daily Intelligence Report as a PDF">Download PDF</a>
     </div>
     <p class="brief-period-note"><time datetime="2026-11-12">12 November 2026</time> · All four regional briefs, with a front-page overview and maps.</p>
@@ -248,18 +259,18 @@
 
   <section class="panel brief-panel" id="briefPanel">
     <div class="panel-head">
-      <h2 id="briefTitle">AO High North Daily Analyst Brief</h2>
+      <h2 id="briefTitle" tabindex="-1">AO High North Daily Analyst Brief</h2>
       <div class="brief-controls">
-        <select id="briefHistory" class="text-input"><option value="latest">Latest</option></select>
+        <select id="briefHistory" class="text-input" aria-label="Regional brief edition"><option value="latest">Latest</option></select>
         <a id="downloadBriefBtn" class="btn-ghost brief-pdf-link" aria-disabled="true">Download PDF</a>
         <a id="printBriefBtn" class="btn-ghost brief-pdf-link" target="_blank" rel="noopener" aria-disabled="true">Print PDF</a>
         <button id="readingModeBtn" class="btn-ghost" aria-pressed="false">Reading view</button>
         <span id="briefMeta" class="meta mono"></span>
       </div>
     </div>
-    <p class="brief-period-note">Daily assessment · its own publication date and reporting period are shown below.</p>
+    <p class="brief-period-note">Regional assessment, outlook and indicators · the reporting period appears below.</p>
     <nav id="briefNav" class="brief-nav" aria-label="Brief sections"></nav>
-    <div id="briefContent" class="brief-content">Awaiting first brief generation cycle…</div>
+    <div id="briefContent" class="brief-content">Loading regional brief…</div>
     <details id="factCheckBox" class="fact-check-box hidden"><summary>Editorial Review Details</summary>
       <div class="tier-label">FACT-CHECK PASS (SECOND MODEL REVIEW)</div>
       <p id="factCheckText" class="tier-text"></p>
@@ -326,7 +337,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-<script src="static/js/app.js?v=20261112-1"></script>
-<script src="static/js/reporting-tools.js?v=20261111-2"></script>
+<script src="static/js/app.js?v=20261112-2"></script>
+<script src="static/js/reporting-tools.js?v=20261112-1"></script>
 </body>
 </html>
