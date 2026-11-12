@@ -1,9 +1,16 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from scripts.cloud_job import scheduled_morning_is_due
+from scripts.cloud_job import collection_recovery_due, scheduled_morning_is_due
+
+
+def test_collection_recovery_only_runs_when_overdue():
+    now = datetime(2026, 11, 12, 18, 52)
+    assert collection_recovery_due(None, now)
+    assert collection_recovery_due(now - timedelta(minutes=75), now)
+    assert not collection_recovery_due(now - timedelta(minutes=74), now)
 
 
 class _Query:

@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="static/css/dashboard.css?v=20261111-3">
-<link rel="stylesheet" href="static/css/compass-watch.css?v=10">
+<link rel="stylesheet" href="static/css/compass-watch.css?v=11">
 </head>
 <body>
 
@@ -49,7 +49,7 @@
     <details class="health-details"><summary class="status-item">
       <span class="dot dot-live"></span>
       <span id="systemState" class="mono">Connecting…</span>
-    </summary><div id="healthDetails" class="health-popover">Checking updates…</div></details>
+    </summary><div class="health-popover"><div id="healthDetails">Checking updates…</div><p id="collectionFeedMetrics" class="meta"></p></div></details>
     <button id="collectBtn" class="btn-ghost btn-primary hidden">Collect</button>
     <button id="analysisBtn" class="btn-ghost hidden">Analyse</button>
     <button id="notifyBtn" class="btn-ghost hidden">Alerts off</button>
@@ -66,7 +66,7 @@
   </div>
   <div class="metric-grid" aria-label="Current intelligence summary">
     <div class="metric-card">
-      <span class="metric-label">Events</span>
+      <span class="metric-label" id="kpiEventLabel">Events</span>
       <strong id="kpiEvents">—</strong>
       <span id="kpiWindow" class="metric-detail">last 24 hours</span>
     </div>
@@ -76,14 +76,9 @@
       <span class="metric-detail">severity 4–5</span>
     </div>
     <div class="metric-card">
-      <span class="metric-label">Mapped</span>
+      <span class="metric-label">On map</span>
       <strong id="kpiMapped">—</strong>
       <span class="metric-detail">plotted events</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label" title="Regional and global feeds with a successful last fetch; not the age or completeness of reporting">Feeds without errors</span>
-      <strong id="kpiSources">—</strong>
-      <span class="metric-detail">healthy sources</span>
     </div>
     <div id="periodControls" role="group" aria-labelledby="windowLabel" aria-describedby="windowScope">
       <span id="windowLabel" class="meta">Reporting window</span>
@@ -99,6 +94,7 @@
   <div class="workspace-toolbar">
     <button id="shareView" class="btn-ghost" type="button">Copy view link</button>
     <span id="shareStatus" class="meta" role="status"></span>
+    <a href="#reportingTitle">Latest Reporting</a>
     <a href="#briefTitle">Regional brief</a>
     <a href="#audioBriefTitle">Listen</a>
     <a href="#combinedReportTitle">All-region PDF</a>
@@ -150,7 +146,7 @@
     <img class="map-watermark" src="static/img/compass-watch.svg" alt="">
     <details class="timeline-controls" id="mapTimeline">
       <summary>Publication Timeline</summary>
-      <p class="meta">Replay the loaded reports by publication time, not when events occurred.</p>
+      <p class="meta" id="replayScope">Replay covers loaded reports by publication time, not when events occurred.</p>
       <label for="timelinePosition" id="timelineLabel">Latest reporting</label>
       <input id="timelinePosition" type="range" min="0" max="1000" value="1000" disabled>
       <button id="timelineLive" class="btn-ghost" type="button">Back to latest</button>
@@ -178,10 +174,10 @@
     </div>
     <div class="reporting-tools">
     <details class="reporting-filters">
-      <summary>Filter Reporting</summary>
+      <summary>Filter map &amp; reporting</summary>
     <div class="feed-filters">
       <input id="feedSearch" type="text" maxlength="160" aria-label="Search reporting" placeholder="Search title/summary…" class="text-input">
-      <select id="feedCategoryFilter" class="text-input">
+      <select id="feedCategoryFilter" class="text-input" aria-label="Reporting category">
         <option value="">All categories</option>
         <option value="sabotage">Sabotage</option>
         <option value="electronic_warfare">Electronic warfare</option>
@@ -203,7 +199,16 @@
       <div id="followingItems"></div>
     </details>
     </div>
+    <div id="activeReportFilters" class="report-page-actions" hidden>
+      <span id="activeReportFilterText" class="meta"></span>
+      <button id="clearReportFilters" class="btn-ghost" type="button">Clear filters</button>
+    </div>
     <div id="feedList" class="feed-list"></div>
+    <div class="report-page-actions">
+      <button id="loadMoreReports" class="btn-ghost" type="button" hidden>Load more reports</button>
+      <button id="refreshReports" class="btn-ghost" type="button" hidden>Refresh reporting</button>
+      <span id="reportPageStatus" class="meta" role="status"></span>
+    </div>
   </section>
 
   <section class="panel audio-panel" aria-labelledby="audioBriefTitle">
@@ -251,10 +256,10 @@
 
   <section class="panel combined-report-panel" aria-labelledby="combinedReportTitle">
     <div class="panel-head">
-      <h2 id="combinedReportTitle" tabindex="-1">Daily Intelligence Report</h2>
+      <h2 id="combinedReportTitle" tabindex="-1">All-region Report</h2>
       <a class="btn-ghost brief-pdf-link" href="reports/sentinel-daily-intelligence-report-2026-11-12.pdf" download aria-label="Download the 12 November 2026 Daily Intelligence Report as a PDF">Download PDF</a>
     </div>
-    <p class="brief-period-note"><time datetime="2026-11-12">12 November 2026</time> · All four regional briefs, with a front-page overview and maps.</p>
+    <p class="brief-period-note"><time datetime="2026-11-12">12 November 2026 edition</time> · All four regional briefs, with a front-page overview and maps.</p>
   </section>
 
   <section class="panel brief-panel" id="briefPanel">
@@ -337,7 +342,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-<script src="static/js/app.js?v=20261112-2"></script>
-<script src="static/js/reporting-tools.js?v=20261112-1"></script>
+<script src="static/js/app.js?v=20261112-3"></script>
+<script src="static/js/reporting-tools.js?v=20261112-2"></script>
 </body>
 </html>

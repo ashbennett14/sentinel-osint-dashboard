@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -134,14 +135,40 @@ def fetch_shard(index: int, count: int) -> None:
                 total += fetcher(db, source)
             except Exception as exc:
                 logger.warning("Fetcher error for %s: %s", source.name, exc)
+                raise
         logger.info("Shard %d/%d collected %d articles", index + 1, count, total)
     finally:
         db.close()
 
 
-def classify_and_record() -> None:
+def collection_recovery_due(last_success: datetime | None, now: datetime) -> bool:
+    return last_success is None or now - last_success >= timedelta(minutes=75)
+
+
+def prepare_collection(only_if_stale: bool) -> None:
+    with SessionLocal() as db:
+        last = db.query(SystemStatus).filter_by(component="ingest").first()
+        due = not only_if_stale or collection_recovery_due(
+            last.last_success_at if last else None, datetime.utcnow()
+        )
+        if due:
+            _record_status(db, "ingest-start", True)
+            try:
+                seed_sources(strict=True)
+            except Exception as exc:
+                _record_status(db, "ingest", False, str(exc))
+                raise
+        else:
+            logger.info("Recovery skipped: collection has completed in the past 75 minutes")
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+        output.write(f"collect={str(due).lower()}\n")
+
+
+def classify_and_record(partial: bool = False) -> None:
     try:
-        run_classification_pass()
+        run_classification_pass(strict=True)
+        if partial:
+            raise RuntimeError("At least one collection worker did not complete.")
         db = SessionLocal()
         try:
             _record_status(db, "ingest", True)
@@ -190,7 +217,9 @@ def scheduled_morning_is_due(force: bool) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("job", choices=("seed", "collect", "classify", "synopsis", "brief", "morning", "audio", "cleanup"))
+    parser.add_argument("job", choices=("seed", "prepare-collection", "collect", "classify", "synopsis", "brief", "morning", "audio", "cleanup"))
+    parser.add_argument("--only-if-stale", action="store_true")
+    parser.add_argument("--partial", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--shard-count", type=int, default=1)
@@ -198,6 +227,8 @@ def main() -> int:
     init_db()
     if args.job == "seed":
         seed_sources()
+    elif args.job == "prepare-collection":
+        prepare_collection(args.only_if_stale)
     elif args.job == "collect":
         if not 0 <= args.shard_index < args.shard_count <= 6:
             parser.error("shard index/count must describe at most six workers")
@@ -206,7 +237,8 @@ def main() -> int:
             lambda: fetch_shard(args.shard_index, args.shard_count),
         )
     elif args.job == "classify":
-        run_database_job("classify", classify_and_record)
+        if not run_database_job("classify", lambda: classify_and_record(args.partial)):
+            raise RuntimeError("Collection classification lock is busy.")
     elif args.job == "synopsis":
         run_database_job("synopsis", run_synopsis)
     elif args.job == "brief":

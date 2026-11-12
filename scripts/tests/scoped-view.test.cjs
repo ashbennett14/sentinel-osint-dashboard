@@ -41,3 +41,35 @@ test("switching region clears the previous view and ignores late synopsis respon
   assert.equal(el("synStrategic").textContent, "Levant assessment");
   assert.match(el("synopsisMeta").textContent, /Window: last 24 hours.*Published/);
 });
+
+test("an incomplete replay begins at the oldest loaded report and labels its limits", () => {
+  const elements = new Map();
+  const el = id => {
+    if (!elements.has(id)) elements.set(id, {value: "0", max: "1000", setAttribute() {}});
+    return elements.get(id);
+  };
+  let plotted = [];
+  const sandbox = vm.createContext({
+    document: {getElementById: el},
+    state: {window: "30d", search: "warning", category: ""},
+    localStorage: {getItem: () => null},
+    formatUkTime: value => value,
+    plotSigActs: items => { plotted = items; },
+    renderFeed() {},
+    updateOverview() {},
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../../frontend/static/js/reporting-tools.js"), "utf8"), sandbox);
+  vm.runInContext(`
+    reportingSnapshot = [
+      {id: 2, published_at: "2026-11-12T15:00:00Z"},
+      {id: 1, published_at: "2026-11-12T14:00:00Z"},
+    ];
+    reportingMeta = {start:"2026-10-13T16:00:00Z", as_of:"2026-11-12T16:00:00Z", total:501, next_offset:2};
+    paintReporting();
+  `, sandbox);
+  assert.equal(plotted.length, 1);
+  assert.equal(plotted[0].id, 1);
+  assert.match(el("timelineLabel").textContent, /2026-11-12T14:00/);
+  assert.match(el("replayScope").textContent, /2 of 501/);
+  assert.match(el("feedCount").textContent, /Replay: 1 of 2/);
+});

@@ -19,6 +19,7 @@ const state = {
 // ---------------------------------------------------------------------
 let map, markersLayer;
 const markersById = new Map();
+let pinnedMapId = null;
 
 const AO_CENTER = {
   AO_HIGH_NORTH: [62.5, 20.0],
@@ -110,6 +111,7 @@ function initMap() {
   });
   setBasemap(streets);
   markersLayer = L.layerGroup().addTo(map);
+  map.on("zoomend", syncMarkerGroups);
   if (window.ResizeObserver) {
     const mapResize = new ResizeObserver(() => map.invalidateSize({ pan: false }));
     mapResize.observe(map.getContainer());
@@ -144,6 +146,7 @@ function plotSigActs(sigacts, fit = true) {
   if (!markersLayer || !map) return;
   markersLayer.clearLayers();
   markersById.clear();
+  pinnedMapId = null;
   const plotted = [];
   sigacts.forEach((s) => {
     if (s.lat == null || s.lon == null) return;
@@ -161,7 +164,6 @@ function plotSigActs(sigacts, fit = true) {
     }
     marker.bindPopup(popup);
     marker.on("click", () => selectEvent(s.id, true));
-    marker.addTo(markersLayer);
     markersById.set(s.id, marker);
     // An outlying Greenland/Atlantic report should not pull the Nordic
     // overview off the region. Its marker and Locate action remain available.
@@ -171,6 +173,41 @@ function plotSigActs(sigacts, fit = true) {
   });
   if (fit && plotted.length) {
     map.fitBounds(L.latLngBounds(plotted), { padding: [28, 28], maxZoom: 7 });
+  }
+  syncMarkerGroups();
+}
+
+function syncMarkerGroups() {
+  if (!map || !markersLayer) return;
+  markersLayer.clearLayers();
+  const zoom = map.getZoom();
+  const cells = new Map();
+  for (const [id, marker] of markersById) {
+    if (zoom >= 9 || id === pinnedMapId) {
+      marker.addTo(markersLayer);
+      continue;
+    }
+    const point = map.project(marker.getLatLng(), zoom);
+    const key = `${Math.round(point.x / 40)}:${Math.round(point.y / 40)}`;
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(marker);
+  }
+  for (const group of cells.values()) {
+    if (group.length === 1) {
+      group[0].addTo(markersLayer);
+      continue;
+    }
+    const bounds = L.latLngBounds(group.map(marker => marker.getLatLng()));
+    const label = `${group.length} mapped events. Zoom in to separate.`;
+    const cluster = L.marker(bounds.getCenter(), {
+      title: label,
+      icon: L.divIcon({className:"event-map-group", html:String(group.length), iconSize:[32,32]}),
+      zIndexOffset: 1500,
+    });
+    cluster.on("click", () => {
+      map.setView(bounds.getCenter(), Math.min(9, zoom + 2));
+    });
+    cluster.addTo(markersLayer);
   }
 }
 
@@ -252,9 +289,13 @@ function updateAoHeader() {
 }
 
 function updateOverview(sigacts) {
-  document.getElementById("kpiEvents").textContent = sigacts.length.toLocaleString();
-  document.getElementById("kpiCritical").textContent = sigacts.filter((s) => s.severity >= 4).length.toLocaleString();
-  document.getElementById("kpiMapped").textContent = sigacts.filter((s) => s.lat != null && s.lon != null).length.toLocaleString();
+  const live = timelineIsLive();
+  const mapped = sigacts.filter((s) => s.lat != null && s.lon != null).length;
+  document.getElementById("kpiEventLabel").textContent = !live ? "Replay events" : state.search || state.category ? "Matching events" : "Events";
+  document.getElementById("kpiEvents").textContent = (live ? reportingMeta.total : sigacts.length).toLocaleString();
+  document.getElementById("kpiCritical").textContent = (live ? reportingMeta.high : sigacts.filter((s) => s.severity >= 4).length).toLocaleString();
+  document.getElementById("kpiMapped").textContent = live && reportingMeta.mapped > mapped
+    ? `${mapped.toLocaleString()}/${reportingMeta.mapped.toLocaleString()}` : mapped.toLocaleString();
   document.getElementById("kpiWindow").textContent = WINDOW_LABELS[state.window];
 }
 
@@ -293,30 +334,66 @@ async function triggerJob(path, button, busyLabel, successLabel) {
 }
 
 let sigactRequest = 0;
-async function refreshSigActs() {
+async function refreshSigActs(append = false) {
+  if (append && (loadingReports || reportingMeta?.next_offset == null)) return;
   const request = ++sigactRequest;
+  const button = document.getElementById("loadMoreReports");
+  const status = document.getElementById("reportPageStatus");
+  loadingReports = true;
+  button.disabled = true;
+  status.textContent = append ? "Loading more reporting…" : "";
   try {
-    const params = new URLSearchParams({ ao: state.ao, window: state.window });
+    const params = new URLSearchParams({ ao: state.ao, window: state.window, limit: "8" });
     if (state.search) params.set("q", state.search);
     if (state.category) params.set("category", state.category);
-    const data = await fetchJson(`/api/sigacts?${params.toString()}`);
+    if (append) {
+      params.set("as_of", reportingMeta.as_of);
+      params.set("offset", reportingMeta.next_offset);
+    }
+    const data = await fetchJson(`/api/reporting?${params.toString()}`);
     if (request !== sigactRequest) return;
-    receiveReporting(data);
-    maybeNotify(data);
+    const firstNew = append ? data.items[0]?.id : null;
+    const focused = document.activeElement === button;
+    receiveReporting(data, append);
+    status.textContent = append ? `${data.items.length} additional events loaded.` : "";
+    if (firstNew && focused) document.querySelector(`[data-event-id="${firstNew}"] .feed-title`)?.focus();
+    if (!append) maybeNotify(data.items);
   } catch (e) {
     if (request !== sigactRequest) return;
     console.warn("sigacts fetch failed", e);
+    if (append || reportingMeta) {
+      status.textContent = e.status === 400 ? "This reporting snapshot has expired. Refresh reporting to start a new one." : "Reporting could not refresh. Previously loaded reports are still shown.";
+      if (e.status === 400) document.getElementById("refreshReports").hidden = false;
+      return;
+    }
     document.getElementById("feedCount").textContent = "Unavailable";
     document.getElementById("feedList").textContent = "Latest reporting could not load. The dashboard will retry automatically.";
+  } finally {
+    if (request === sigactRequest) {
+      loadingReports = false;
+      button.disabled = false;
+    }
   }
 }
 
-function resetScopedView(regionChanged) {
+function resetFilteredReporting() {
   resetReportingTimeline();
   plotSigActs([], false);
+  document.getElementById("loadMoreReports").hidden = true;
+  document.getElementById("refreshReports").hidden = true;
+  document.getElementById("reportPageStatus").textContent = "";
   document.getElementById("feedList").textContent = "Loading reporting…";
   document.getElementById("feedCount").textContent = "Loading…";
   for (const id of ["kpiEvents", "kpiCritical", "kpiMapped"]) document.getElementById(id).textContent = "—";
+  const filters = document.getElementById("activeReportFilters");
+  filters.hidden = !(state.search || state.category);
+  document.getElementById("activeReportFilterText").textContent = filters.hidden ? "" :
+    `Map and reporting filtered: ${[state.search && `“${state.search}”`, state.category && formatCategory(state.category)].filter(Boolean).join(" · ")}. Synopsis is unchanged.`;
+  document.getElementById("kpiEventLabel").textContent = filters.hidden ? "Events" : "Matching events";
+}
+
+function resetScopedView(regionChanged) {
+  resetFilteredReporting();
   document.getElementById("synStrategic").textContent = "Loading synopsis…";
   document.getElementById("synOperational").textContent = "—";
   document.getElementById("synTactical").textContent = "—";
@@ -327,7 +404,7 @@ function resetScopedView(regionChanged) {
   if (!regionChanged) return;
   document.getElementById("evidenceDrawer").close();
   document.getElementById("briefHistory").replaceChildren(new Option("Latest", "latest"));
-  document.getElementById("kpiSources").textContent = "—";
+  document.getElementById("collectionFeedMetrics").textContent = "";
   document.getElementById("sourcesList").replaceChildren();
   document.getElementById("sourceCoverage").textContent = "Loading regional feed coverage…";
   map?.setView(AO_CENTER[state.ao], AO_ZOOM[state.ao], {animate:false});
@@ -613,10 +690,17 @@ async function refreshHealth() {
     const ingest = (data.components || []).find((c) => c.component === "ingest");
     const fresh = document.getElementById("reportingFreshness");
     const collected = reportingDate(ingest?.last_success_at);
-    const delayed = !Number.isFinite(collected) || !!ingest?.last_error || Date.now() - collected > 2 * 3600000;
+    const collection = data.collection || {};
+    const delayed = !Number.isFinite(collected) || !!ingest?.last_error || Date.now() - collected >= 75 * 60000;
+    const stateLabel = {
+      running: "Collection in progress", unfinished: "Collection started but did not finish",
+      failed: "Last collection run failed", overdue: "Collection overdue",
+    }[collection.state];
+    const sourceFailures = collection.failed_feeds
+      ? ` · ${collection.failed_feeds} enabled feed${collection.failed_feeds === 1 ? "" : "s"} failed on last fetch` : "";
     fresh.textContent = Number.isFinite(collected)
-      ? `${delayed ? "Collection delayed · " : ""}Last successful collection (all regions): ${formatUkTime(ingest.last_success_at)}${delayed ? " · Recent reporting may be incomplete." : ""}`
-      : "Collection time unavailable · Recent reporting may be incomplete.";
+      ? `${stateLabel ? stateLabel + " · " : ""}Last successful collection: ${formatUkTime(ingest.last_success_at)}${sourceFailures}${delayed ? " · Recent reporting may be incomplete." : ""}`
+      : `${stateLabel || "Collection time unavailable"}${sourceFailures} · Recent reporting may be incomplete.`;
     fresh.classList.toggle("is-stale", delayed);
     systemState.textContent = ingest && ingest.last_success_at
       ? `Collected ${timeAgo(ingest.last_success_at)}`
@@ -643,15 +727,17 @@ async function refreshHealth() {
 function renderFeed(sigacts) {
   const list = document.getElementById("feedList");
   const expanded = new Set([...list.querySelectorAll('.feed-details-toggle[aria-expanded="true"]')].map(toggle => toggle.closest("[data-event-id]").dataset.eventId));
-  document.getElementById("feedCount").textContent = `${sigacts.length} event${sigacts.length === 1 ? "" : "s"}${timelineIsLive() ? "" : " · replay"}`;
   if (!sigacts.length) {
     list.innerHTML = `<div class="feed-item"><span class="feed-meta">${timelineIsLive() ? "No qualifying events for the selected AO, period and filters." : "No loaded reports were published by this point in the replay."}</span></div>`;
     return;
   }
   list.innerHTML = sigacts.map((s) => {
-    const title = sourceText(s, "title");
+    const rawTitle = sourceText(s, "title");
+    const publisherSuffix = s.destination === "Google News" && s.source_name ? ` - ${s.source_name}` : "";
+    const title = publisherSuffix && rawTitle.endsWith(publisherSuffix) ? rawTitle.slice(0, -publisherSuffix.length) : rawTitle;
     const excerpt = sourceText(s, "summary");
-    const summary = excerpt.startsWith(title) ? "" : excerpt;
+    const detail = excerpt.startsWith(title) ? excerpt.slice(title.length).trim().replace(/^[–—-]\s*/, "") : excerpt;
+    const summary = detail === s.source_name ? "" : detail;
     const related = Math.max(0, (s.cluster_size || 1) - 1);
     const open = expanded.has(String(s.id));
     return `
@@ -659,9 +745,10 @@ function renderFeed(sigacts) {
         <svg class="feed-document" aria-hidden="true" width="20" height="22" viewBox="0 0 20 22" fill="none" stroke="currentColor"><path d="M4 1.5h8l5 5v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-17a1 1 0 0 1 1-1Z"/><path d="M12 2v5h5M6 10h8M6 13h8M6 16h6"/></svg>
         <a class="feed-title" dir="auto" href="${safeUrl(s.url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>
         ${summary ? `<p class="feed-summary">${escapeHtml(summary.slice(0, 180))}${summary.length > 180 ? "…" : ""}</p>` : ""}
-        <time class="feed-time" title="${formatUkTime(s.published_at)}">${timeAgo(s.published_at)}</time>
+        <time class="feed-time" datetime="${new Date(reportingDate(s.published_at)).toISOString()}" title="${formatUkTime(s.published_at)}">${timeAgo(s.published_at)}</time>
         <button class="btn-ghost evidence-trigger feed-evidence" type="button" data-evidence-id="${Number(s.id)}" aria-label="Evidence for ${escapeHtml(title).replaceAll('"', '&quot;')}">Evidence</button>
         <div class="feed-actions">
+          <span class="feed-publisher">${escapeHtml(s.source_name || s.destination || "Publisher not listed")} · ${escapeHtml(formatUkTime(s.published_at))}</span>
           <button class="feed-details-toggle" type="button" aria-expanded="${open}" aria-controls="feed-details-${s.id}">Details</button>
           ${related ? `<span class="meta">${related} related article${related === 1 ? "" : "s"}</span>` : ""}
           ${s.original_language && browserCanTranslate() && !browserTranslations.has(s.id) ? `<button class="btn-ghost translate-report" data-id="${Number(s.id)}" type="button">Translate to English</button>` : ""}
@@ -694,7 +781,9 @@ function renderFeed(sigacts) {
     button.addEventListener("click", () => {
       const marker = markersById.get(Number(button.dataset.id));
       if (!marker || !map) return;
-      map.setView(marker.getLatLng(), Math.max(map.getZoom(), 7), { animate: true });
+      pinnedMapId = Number(button.dataset.id);
+      map.setView(marker.getLatLng(), Math.max(map.getZoom(), 9), { animate: false });
+      if (!markersLayer.hasLayer(marker)) syncMarkerGroups();
       marker.openPopup();
       selectEvent(Number(button.dataset.id));
       document.getElementById("map").scrollIntoView({ behavior: "smooth", block: "center" });
@@ -767,7 +856,8 @@ async function refreshSources() {
     const relevantHealthy = relevant.filter((s) => s.last_fetched_at && !s.last_error).length;
     document.getElementById("sourceSummary").textContent =
       `All regions: ${healthy}/${enabled.length} feeds fetched without errors`;
-    document.getElementById("kpiSources").textContent = `${relevantHealthy}/${relevant.length}`;
+    document.getElementById("collectionFeedMetrics").textContent =
+      `Selected region and global feeds: ${relevantHealthy} of ${relevant.length} fetched without errors. This does not measure reporting freshness.`;
     if (expanded) renderCoverage(coverageEl, coverage, relevant);
     list.innerHTML = relevant.map((s) => `
       <div class="source-row">
@@ -876,7 +966,7 @@ function wireBriefControls() {
 // UI wiring
 // ---------------------------------------------------------------------
 function refreshAll() {
-  if (!document.getElementById("evidenceDrawer").open && timelineIsLive()) {
+  if (!document.getElementById("evidenceDrawer").open && timelineIsLive() && !loadingReports && reportingSnapshot.length <= 8) {
     refreshSigActs();
   }
   refreshSynopsis();
@@ -956,14 +1046,30 @@ function wireControls() {
     searchTimeout = setTimeout(() => {
       state.search = e.target.value.trim().slice(0, 160);
       writeView(true);
-      resetReportingTimeline();
+      resetFilteredReporting();
       refreshSigActs();
     }, 300);
   });
   document.getElementById("feedCategoryFilter").addEventListener("change", (e) => {
     state.category = e.target.value;
     writeView();
-    resetReportingTimeline();
+    resetFilteredReporting();
+    refreshSigActs();
+  });
+  document.getElementById("loadMoreReports").addEventListener("click", () => refreshSigActs(true));
+  document.getElementById("refreshReports").addEventListener("click", () => {
+    resetFilteredReporting();
+    document.getElementById("reportingTitle").focus();
+    refreshSigActs();
+  });
+  document.getElementById("clearReportFilters").addEventListener("click", () => {
+    clearTimeout(searchTimeout);
+    state.search = state.category = "";
+    document.getElementById("feedSearch").value = "";
+    document.getElementById("feedCategoryFilter").value = "";
+    writeView();
+    resetFilteredReporting();
+    document.getElementById("reportingTitle").focus();
     refreshSigActs();
   });
 
@@ -1013,7 +1119,10 @@ async function openEvidence(trigger) {
     timeline.innerHTML = data.articles.map(article => {
       const excerpt = plainReporting(article.excerpt);
       const url = safeUrl(article.url);
-      return `<li><div class="meta">${escapeHtml(article.publisher || "Publisher not listed")} · ${escapeHtml(formatUkTime(article.published_at))}</div><h4 dir="auto">${escapeHtml(plainReporting(article.title))}</h4>${excerpt ? `<p dir="auto">${escapeHtml(excerpt)}</p>` : ""}${url !== "#" ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open original article ↗</a>` : ""}</li>`;
+      const headline = plainReporting(article.title);
+      const destination = article.destination || "source";
+      const translation = article.original_language ? `https://translate.google.com/?${new URLSearchParams({sl:"auto",tl:"en",text:[headline, excerpt === headline ? "" : excerpt].filter(Boolean).join("\n\n").slice(0,750),op:"translate"})}` : "";
+      return `<li><div class="meta">${escapeHtml(article.publisher || "Publisher not listed")} · ${escapeHtml(formatUkTime(article.published_at))}</div><h4 dir="auto">${escapeHtml(headline)}</h4>${excerpt && excerpt !== headline ? `<p dir="auto">${escapeHtml(excerpt)}</p>` : ""}<div class="evidence-links">${url !== "#" ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open via ${escapeHtml(destination)} ↗</a>` : ""}${translation ? `<a href="${escapeHtml(translation)}" target="_blank" rel="noopener noreferrer">Translate excerpt on Google ↗</a>` : ""}</div></li>`;
     }).join("");
     if (data.older_count) older.textContent = `${data.older_count} older related article(s) not shown.`;
   } catch (_) {
@@ -1087,6 +1196,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireControls();
   document.querySelector(".ao-tab.active")?.setAttribute("aria-current", "page");
   updateAoHeader();
+  resetFilteredReporting();
   refreshAll();
   setInterval(refreshAll, 60000); // poll every minute
 });

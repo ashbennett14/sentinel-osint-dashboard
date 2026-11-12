@@ -108,6 +108,66 @@ def test_reporting_groups_followups_even_when_primary_is_outside_window(db):
         app.dependency_overrides.pop(get_db, None)
 
 
+def test_paginated_reporting_totals_and_snapshot(db):
+    now = datetime.utcnow()
+    for id, hours, severity, mapped in [(91, 1, 4, True), (92, 2, 2, False), (93, 3, 5, True)]:
+        db.add(Article(id=id, ao=AO, source_id=1, title=f"Review item {id}",
+                       url=f"https://example.test/article/{id}", published_at=now - timedelta(hours=hours),
+                       fetched_at=now - timedelta(minutes=5), is_sigact=True, processed=True,
+                       severity=severity, lat=42 if mapped else None, lon=20 if mapped else None))
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        client = TestClient(app)
+        first = client.get("/api/reporting", params={"ao": AO, "limit": 2}).json()
+        assert [item["id"] for item in first["items"]] == [91, 92]
+        assert (first["total"], first["high"], first["mapped"], first["next_offset"]) == (3, 2, 2, 2)
+        db.add(Article(id=94, ao=AO, source_id=1, title="Late arrival",
+                       url="https://example.test/article/94", published_at=now - timedelta(minutes=30),
+                       fetched_at=datetime.utcnow(), is_sigact=True, processed=True, severity=2))
+        db.commit()
+        second = client.get("/api/reporting", params={
+            "ao": AO, "limit": 2, "offset": first["next_offset"], "as_of": first["as_of"],
+        }).json()
+        assert [item["id"] for item in second["items"]] == [93]
+        assert (second["total"], second["next_offset"]) == (3, None)
+        filtered = client.get("/api/reporting", params={"ao": AO, "q": "item 92"}).json()
+        assert filtered["total"] == 1
+        assert client.get("/api/reporting", params={"ao": AO, "as_of": "2000-01-01T00:00Z"}).status_code == 400
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_collection_health_distinguishes_run_and_feed_failures(db):
+    now = datetime.utcnow()
+    feed = db.get(Source, 1)
+    feed.enabled = True
+    feed.last_error = "Network failure"
+    ingest = SystemStatus(component="ingest", last_success_at=now - timedelta(hours=3),
+                          last_attempt_at=now - timedelta(hours=3))
+    db.add(ingest)
+    db.commit()
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        client = TestClient(app)
+        get = lambda: client.get("/api/health").json()["collection"]
+        assert get()["state"] == "overdue"
+        heartbeat = SystemStatus(component="ingest-start", last_success_at=now - timedelta(minutes=10))
+        db.add(heartbeat)
+        db.commit()
+        assert get()["state"] == "running"
+        ingest.last_attempt_at = now
+        ingest.last_error = "Worker failed"
+        db.commit()
+        assert get()["state"] == "failed"
+        ingest.last_success_at = now
+        ingest.last_error = None
+        db.commit()
+        assert get()["state"] == "current" and get()["failed_feeds"] == 1
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
 def test_source_coverage_counts_located_and_unlocated_recent_ao_articles(db):
     now = datetime.utcnow()
     rows = [

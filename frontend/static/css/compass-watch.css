@@ -45,6 +45,9 @@ a { color: var(--accent); }
 .ao-tab.active .ao-tab-label { color: inherit; font-weight: inherit; }
 .status-item { margin: 0; font-size: 12px; }
 .health-popover { z-index: 5; }
+.health-popover > #healthDetails { display: grid; gap: 8px; padding: 0; }
+#healthDetails > div { display: flex; justify-content: space-between; gap: 8px; }
+.health-popover #collectionFeedMetrics { margin-bottom: 0; }
 
 .mission-bar {
   position: relative; isolation: isolate;
@@ -247,7 +250,7 @@ a { color: var(--accent); }
 .reporting-tools > details[open] { flex-basis: 100%; }
 .reporting-tools summary, .audio-options > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .reporting-tools .feed-filters { padding: 7px 0 2px; border: 0; }
-.feed-list { max-height: 320px; }
+.feed-list { max-height: none; overflow: visible; }
 .feed-item:has(.feed-title) {
   display: grid; align-items: center;
   grid-template-columns: 22px minmax(0, .85fr) minmax(0, 1.15fr) max-content max-content;
@@ -325,10 +328,22 @@ a { color: var(--accent); }
   #periodControls { grid-column: 1 / -1; margin: 4px 0 0; }
   .workspace-toolbar { justify-content: start; }
   .reporting-head-meta { justify-content: start; }
-  .feed-list { max-height: 390px; }
+  .feed-list { max-height: none; }
   .feed-item:has(.feed-title) { padding-left: 13px; column-gap: 7px; }
   .audio-strip { grid-template-columns: minmax(0, 1fr); padding-inline: 14px; }
   .audio-options { padding-inline: 14px; }
+}
+
+.report-page-actions { display: flex; align-items: center; gap: 10px; padding: 8px 18px; }
+.report-page-actions[hidden], .report-page-actions > [hidden] { display: none; }
+.report-page-actions:has(> button[hidden]):not(:has(.meta:not(:empty))) { display: none; }
+.feed-publisher { color: var(--muted); font-size: 12px; }
+.evidence-links { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.event-map-group { border-radius: 50%; background: #143f50; color: #fff; border: 2px solid var(--accent); display: grid; place-items: center; font-weight: 700; }
+@media (max-width: 700px) {
+  .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mission-bar { gap: 8px; }
+  .workspace-toolbar { gap: 5px 10px; }
 }
 
 /* Keep the regions visible alongside the workspace on desktop. */

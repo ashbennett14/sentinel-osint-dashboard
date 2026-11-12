@@ -1,6 +1,6 @@
 import logging
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from fastapi import BackgroundTasks, FastAPI, Depends, Query, HTTPException, status, Request
@@ -30,7 +30,7 @@ from app.scheduler import (
 )
 from app.analysis.audio_brief import audio_path_for
 from app.storage import public_audio_url
-from app.reporting import clean_text, may_need_translation, publisher_name
+from app.reporting import clean_text, may_need_translation, publisher_name, source_destination
 
 logging.basicConfig(level=settings.LOG_LEVEL)
 logger = logging.getLogger("sentinel.main")
@@ -71,7 +71,7 @@ async def response_headers(request: Request, call_next):
             or request.url.path.startswith("/api/synopsis")
             or request.url.path.startswith("/api/brief")
             or request.url.path.startswith("/api/events/")
-            or request.url.path in {"/api/health", "/api/changes"}
+            or request.url.path in {"/api/health", "/api/changes", "/api/reporting"}
         ):
             # Analysis products are regenerated behind stable API URLs. Never
             # leave the dashboard showing a superseded product after a run.
@@ -94,11 +94,33 @@ WINDOW_HOURS = {"24h": 24, "48h": 48, "7d": 24 * 7, "30d": 24 * 30}
 @app.get("/api/health")
 def health(db: Session = Depends(get_db)):
     statuses = db.query(SystemStatus).all()
+    by_name = {item.component: item for item in statuses}
+    ingest = by_name.get("ingest")
+    heartbeat = by_name.get("ingest-start")
+    started = heartbeat.last_success_at if heartbeat else None
+    attempted = ingest.last_attempt_at if ingest else None
+    completed = ingest.last_success_at if ingest else None
+    now = datetime.utcnow()
+    if started and (not attempted or started > attempted):
+        state = "running" if now - started < timedelta(minutes=60) else "unfinished"
+    elif ingest and ingest.last_error:
+        state = "failed"
+    elif not completed:
+        state = "awaiting"
+    elif now - completed >= timedelta(minutes=75):
+        state = "overdue"
+    else:
+        state = "current"
+    feeds = db.query(Source).filter(Source.enabled.is_(True))
+    if not settings.TWITTER_BEARER_TOKEN:
+        feeds = feeds.filter(Source.kind != "twitter")
+    failed_feeds = feeds.filter(Source.last_error.is_not(None)).count()
     return {
         "status": "ok",
         "time": datetime.utcnow().isoformat(),
         "llm_provider": settings.LLM_PROVIDER,
-        "components": [SystemStatusOut.model_validate(s) for s in statuses],
+        "components": [SystemStatusOut.model_validate(s) for s in statuses if s.component != "ingest-start"],
+        "collection": {"state": state, "started_at": started, "failed_feeds": failed_feeds},
     }
 
 
@@ -113,6 +135,7 @@ def _sigact_to_out(a: Article) -> SigActOut:
     item.title = clean_text(a.title)
     item.summary = clean_text(a.summary)
     item.original_language = may_need_translation(a.title, a.summary)
+    item.destination = source_destination(a.url)
     item.reliability = a.source.reliability if a.source else None
     return item
 
@@ -125,11 +148,31 @@ def get_sigacts(
     q: Optional[str] = Query(None, description="free-text search over title/summary"),
     db: Session = Depends(get_db),
 ):
+    return _reporting_page(db, ao, window, category, q, datetime.utcnow(), 500, 0, False)
+
+
+@app.get("/api/reporting")
+def get_reporting(
+    ao: str, window: str = "24h", category: Optional[str] = None,
+    q: Optional[str] = Query(None, max_length=160),
+    limit: int = Query(12, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=100000),
+    as_of: Optional[datetime] = None, db: Session = Depends(get_db),
+):
+    now = datetime.utcnow()
+    if as_of is not None:
+        if as_of.tzinfo:
+            as_of = as_of.astimezone(timezone.utc).replace(tzinfo=None)
+        if as_of > now or now - as_of > timedelta(hours=6):
+            raise HTTPException(400, "Reporting snapshot expired. Reload the first page.")
+    return _reporting_page(db, ao, window, category, q, as_of or now, limit, offset, True)
+
+
+def _reporting_page(db, ao, window, category, q, now, limit, offset, with_totals):
     if window not in WINDOW_HOURS:
         raise HTTPException(400, "window must be one of 24h, 48h, 7d, 30d")
     if ao and ao not in VALID_AOS:
         raise HTTPException(400, "invalid AO")
-    now = datetime.utcnow()
     since = now - timedelta(hours=WINDOW_HOURS[window])
 
     query = db.query(Article).filter(
@@ -137,6 +180,8 @@ def get_sigacts(
         Article.published_at >= since,
         Article.published_at <= now,
     )
+    if with_totals:
+        query = query.filter((Article.fetched_at <= now) | Article.fetched_at.is_(None))
     if ao:
         query = query.filter(Article.ao == ao)
     if category:
@@ -154,11 +199,17 @@ def get_sigacts(
         order_by=(Article.is_cluster_primary.desc().nulls_last(), Article.published_at.desc(), Article.id.desc()),
     )
     ranked = query.with_entities(Article.id.label("article_id"), rank.label("position")).subquery()
-    primaries = (
+    representatives = (
         db.query(Article).join(ranked, ranked.c.article_id == Article.id)
-        .filter(ranked.c.position == 1).options(joinedload(Article.source))
-        .order_by(Article.published_at.desc(), Article.id.desc()).limit(500).all()
+        .filter(ranked.c.position == 1)
     )
+    if with_totals:
+        total, high, mapped = representatives.with_entities(
+            func.count(Article.id), func.count(Article.id).filter(Article.severity >= 4),
+            func.count(Article.id).filter(Article.lat.is_not(None), Article.lon.is_not(None)),
+        ).one()
+    primaries = (representatives.options(joinedload(Article.source))
+                 .order_by(Article.published_at.desc(), Article.id.desc()).offset(offset).limit(limit).all())
     groups = {(a.ao, a.cluster_key): [] for a in primaries if a.ao and a.cluster_key}
     if groups:
         for member in db.query(Article).filter(
@@ -175,7 +226,11 @@ def get_sigacts(
             item.cluster_size = 1 + len(others)
             item.also_reported_by = sorted({name for o in others if (name := publisher_name(o))})
         out.append(item)
-    return out
+    if not with_totals:
+        return out
+    return {"items": out, "total": total, "high": high, "mapped": mapped,
+            "start": since.isoformat() + "Z", "as_of": now.isoformat() + "Z",
+            "next_offset": offset + len(out) if out and offset + len(out) < total else None}
 
 
 @app.get("/api/changes")

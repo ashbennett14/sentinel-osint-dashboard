@@ -1,7 +1,8 @@
 // Browser-only reporting tools. No accounts, notifications or model calls.
 const reportingHours = { "24h": 24, "48h": 48, "7d": 168, "30d": 720 };
 let reportingSnapshot = [];
-let reportingEnd = 0;
+let reportingMeta = null;
+let loadingReports = false;
 let followingRequest = 0;
 const followingKey = "sentinel-following-v1";
 let following = readFollowing();
@@ -62,7 +63,8 @@ function reportingDate(value) {
 
 function resetReportingTimeline() {
   reportingSnapshot = [];
-  reportingEnd = 0;
+  reportingMeta = null;
+  loadingReports = false;
   const slider = document.getElementById("timelinePosition");
   slider.value = "1000";
   slider.disabled = true;
@@ -75,18 +77,23 @@ function timelineIsLive() {
   return document.getElementById("timelinePosition").value === "1000";
 }
 
-function receiveReporting(items) {
-  reportingSnapshot = items;
-  reportingEnd = Date.now();
-  document.getElementById("timelinePosition").disabled = !items.length;
-  paintReporting();
+function receiveReporting(page, append = false) {
+  const items = append ? [...reportingSnapshot, ...page.items] : page.items;
+  reportingSnapshot = [...new Map(items.map(item => [item.id, item])).values()];
+  reportingMeta = page;
+  document.getElementById("timelinePosition").disabled = !reportingSnapshot.length;
+  paintReporting(!append);
   refreshFollowing();
 }
 
 function paintReporting(fit = true) {
+  if (!reportingMeta) return;
   const slider = document.getElementById("timelinePosition");
-  const end = reportingEnd || Date.now();
-  const start = end - reportingHours[state.window] * 3600000;
+  const end = reportingDate(reportingMeta.as_of);
+  const windowStart = reportingDate(reportingMeta.start);
+  const oldest = reportingSnapshot.at(-1)?.published_at;
+  const start = reportingMeta.next_offset !== null && oldest
+    ? Math.max(windowStart, reportingDate(oldest)) : windowStart;
   const cutoff = start + (end - start) * Number(slider.value) / Number(slider.max);
   const live = timelineIsLive();
   const label = live ? "Latest reporting" : `Published by ${formatUkTime(new Date(cutoff).toISOString())}`;
@@ -96,6 +103,15 @@ function paintReporting(fit = true) {
   plotSigActs(data, fit);
   renderFeed(data);
   updateOverview(data);
+  const total = reportingMeta.total.toLocaleString();
+  const loaded = reportingSnapshot.length.toLocaleString();
+  document.getElementById("replayScope").textContent =
+    `Replay uses publication time, not event time. ${loaded} of ${total} reports loaded.${reportingMeta.next_offset !== null ? " Load more reports to extend the replay." : ""}`;
+  document.getElementById("feedCount").textContent = live
+    ? `${loaded} of ${total} ${state.search || state.category ? "matches" : "events"} loaded`
+    : `Replay: ${data.length.toLocaleString()} of ${loaded} loaded events`;
+  document.getElementById("loadMoreReports").hidden = !live || reportingMeta.next_offset === null;
+  document.getElementById("refreshReports").hidden = !live || reportingSnapshot.length <= 8;
 }
 
 function savedStory(id, ao = state.ao) {
@@ -179,18 +195,22 @@ function wireReportingTools() {
     state.search = document.getElementById("feedSearch").value.trim().slice(0, 160);
     writeView(true);
     const status = document.getElementById("shareStatus");
-    try { await navigator.clipboard.writeText(viewUrl().href); status.textContent = "View link copied"; }
+    try {
+      const url = viewUrl();
+      url.hash = "";
+      await navigator.clipboard.writeText(url.href);
+      status.textContent = "View link copied";
+    }
     catch (_) { status.textContent = "Copy the view link from your address bar."; }
   });
   window.addEventListener("popstate", () => {
-    const previousAo = state.ao;
-    const previousWindow = state.window;
+    const {ao:previousAo, window:previousWindow, search:previousSearch, category:previousCategory} = state;
     readView();
     if (previousAo !== state.ao || previousWindow !== state.window) {
       resetScopedView(previousAo !== state.ao);
-    } else {
-      resetReportingTimeline();
-    }
+    } else if (previousSearch !== state.search || previousCategory !== state.category) {
+      resetFilteredReporting();
+    } else return;
     updateAoHeader();
     refreshAll();
   });
@@ -202,7 +222,6 @@ function wireReportingTools() {
   document.getElementById("timelineLive").addEventListener("click", () => {
     document.getElementById("timelinePosition").value = "1000";
     paintReporting(false);
-    refreshSigActs();
   });
   const details = document.getElementById("following");
   details.addEventListener("toggle", () => refreshFollowing());

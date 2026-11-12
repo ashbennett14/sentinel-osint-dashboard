@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.models import Article, SystemStatus
-from app.reporting import publisher_name
+from app.reporting import may_need_translation, publisher_name, source_destination
 
 
 def utc_iso(value):
@@ -104,6 +104,8 @@ def event_evidence(db, ao, article_id, now):
         "ao": ao, "article_id": anchor.id, "title": anchor.title, "older_count": max(0, total - len(articles)),
         "articles": [{
             "id": a.id, "title": a.title, "publisher": _publisher(a), "url": _public_url(a.url),
+            "destination": source_destination(_public_url(a.url)),
+            "original_language": may_need_translation(a.title, a.summary),
             "published_at": utc_iso(a.published_at), "excerpt": (a.summary or "")[:1000],
         } for a in articles],
     }

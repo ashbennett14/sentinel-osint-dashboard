@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 import feedparser
 import requests
@@ -14,6 +15,29 @@ HEADERS = {
     "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
 }
 TIMEOUT = 20
+
+
+def _entry_url(entry):
+    """Prefer an explicit publisher article link, never the source homepage."""
+    default = getattr(entry, "link", None)
+    if not default:
+        return None
+    try:
+        if urlsplit(default).hostname != "news.google.com":
+            return default
+        publisher_host = urlsplit(getattr(entry, "source", {}).get("href", "")).hostname
+        if not publisher_host or publisher_host == "news.google.com":
+            return default
+        for link in getattr(entry, "links", ()):
+            href = link.get("href", "")
+            parts = urlsplit(href)
+            if (link.get("rel") == "alternate" and parts.scheme in {"http", "https"}
+                    and parts.hostname == publisher_host and parts.path.strip("/")
+                    and not parts.username and not parts.password):
+                return href
+    except (ValueError, TypeError):
+        pass
+    return default
 
 
 def _entry_datetime(entry) -> datetime:
@@ -48,7 +72,7 @@ def fetch_rss_source(db: Session, source: Source) -> int:
             raise ValueError(f"Feed parse error: {parsed.bozo_exception}")
 
         for entry in parsed.entries:
-            url = getattr(entry, "link", None)
+            url = _entry_url(entry)
             if not url:
                 continue
             exists = db.query(Article).filter(Article.url == url).first()

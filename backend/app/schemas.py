@@ -19,6 +19,7 @@ class SigActOut(BaseModel):
     source_name: Optional[str] = None
     reliability: Optional[str] = None
     original_language: bool = False
+    destination: Optional[str] = None
     cluster_size: int = 1
     also_reported_by: List[str] = Field(default_factory=list)
 

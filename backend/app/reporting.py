@@ -13,6 +13,15 @@ def clean_text(value):
     return " ".join(text.split())
 
 
+def source_destination(url):
+    try:
+        host = urlsplit(url or "").hostname
+    except ValueError:
+        return None
+    return {"news.google.com": "Google News", "t.me": "Telegram",
+            "twitter.com": "X", "x.com": "X", "bsky.app": "Bluesky"}.get(host, host)
+
+
 def publisher_name(article):
     """Use the publisher suffix carried by Google News, not the monitor label."""
     source = getattr(article, "source", None)
@@ -26,6 +35,8 @@ def publisher_name(article):
         if separator and publisher and len(publisher) <= 100:
             return publisher
         return "Google News (publisher not identified)"
+    if host and getattr(source, "url_or_handle", "").startswith("https://news.google.com/"):
+        return host.removeprefix("www.")
     return source_name
 
 

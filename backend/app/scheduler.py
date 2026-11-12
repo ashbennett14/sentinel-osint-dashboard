@@ -52,7 +52,7 @@ def _record_status(db, component: str, success: bool, error: str = None):
     db.commit()
 
 
-def seed_sources():
+def seed_sources(strict=False):
     db = SessionLocal()
     try:
         canonical_urls = {entry["url_or_handle"] for entry in SOURCES}
@@ -91,6 +91,8 @@ def seed_sources():
     except Exception as exc:  # noqa: BLE001
         logger.error("seed_sources failed: %s", exc)
         db.rollback()
+        if strict:
+            raise
     finally:
         db.close()
 
@@ -135,7 +137,7 @@ def run_ingest_cycle():
         _job_locks["ingest"].release()
 
 
-def run_classification_pass():
+def run_classification_pass(strict=False):
     db = SessionLocal()
     try:
         unprocessed = db.query(Article).filter(or_(
@@ -184,6 +186,8 @@ def run_classification_pass():
         logger.info("Classification pass complete: %d articles processed", len(unprocessed))
     except Exception as exc:  # noqa: BLE001
         logger.error("Classification pass failed: %s", exc)
+        if strict:
+            raise
     finally:
         db.close()
 

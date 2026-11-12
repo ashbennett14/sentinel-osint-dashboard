@@ -29,6 +29,23 @@ _STOPWORDS = {
     "reported", "near",
 }
 
+_WARNING_TERMS = {"warn", "warns", "warned", "warning", "warnings", "threat", "risk"}
+_NORWAY_TERMS = {"norway", "norwegian"}
+_RUSSIA_TERMS = {"russia", "russian"}
+
+
+def _same_norway_warning(left, right):
+    """High-precision fallback for differently worded coverage of one warning."""
+    def signature(headline):
+        terms = set(headline.split())
+        years = {word for word in terms if re.fullmatch(r"20\d{2}", word)}
+        warning = ("sabotage" in terms and terms & _NORWAY_TERMS and terms & _RUSSIA_TERMS
+                   and terms & _WARNING_TERMS)
+        return warning, years
+    a, years_a = signature(left)
+    b, years_b = signature(right)
+    return bool(a and b and not (years_a and years_b and years_a.isdisjoint(years_b)))
+
 
 def _normalize(title: str) -> str:
     words = re.findall(r"[^\W_]+", clean_text(title).casefold())
@@ -70,6 +87,10 @@ def assign_cluster(db: Session, article: Article):
         if not norm_new or not candidate:
             continue
         ratio = SequenceMatcher(None, norm_new, candidate).ratio()
+        if (article.category == "sabotage"
+                and abs(article.published_at - cand.published_at) <= timedelta(hours=18)
+                and _same_norway_warning(norm_new, candidate)):
+            ratio = max(ratio, SIMILARITY_THRESHOLD)
         if ratio > best_ratio:
             best_match, best_ratio = cand, ratio
 
