@@ -5,12 +5,13 @@ from typing import Optional, List
 
 from fastapi import BackgroundTasks, FastAPI, Depends, Query, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.config import settings
 from app.ao import VALID_AOS
+from app.brief_pdf import article_ids, render_brief
 from app.changes import compare_reporting, event_evidence
 from app.database import get_db, init_db
 from app.models import Article, Source, Synopsis, Brief, AudioBrief, SystemStatus
@@ -237,6 +238,23 @@ def get_brief(brief_id: int, db: Session = Depends(get_db)):
     if not brief:
         raise HTTPException(404, "Brief not found")
     return brief
+
+
+@app.get("/api/briefs/{brief_id}/pdf", response_class=Response)
+def get_brief_pdf(brief_id: int, download: bool = False, db: Session = Depends(get_db)):
+    brief = get_brief(brief_id, db)
+    ids = article_ids(brief.content)
+    links = {}
+    if ids:
+        rows = db.query(Article.id, Article.title, Article.url).filter(
+            Article.id.in_(ids), Article.ao == brief.ao
+        ).all()
+        links = {id: (title, url) for id, title, url in rows}
+    pdf, filename = render_brief(brief, links)
+    disposition = "attachment" if download else "inline"
+    return Response(pdf, media_type="application/pdf", headers={
+        "Content-Disposition": f'{disposition}; filename="{filename}"',
+    })
 
 
 def _audio_brief_out(episode: AudioBrief) -> AudioBriefOut:

@@ -144,6 +144,8 @@ a { color: var(--accent); }
 .chapter-btn:hover, .chapter-btn.active { border-color: var(--accent); }
 .chapter-btn.active { background: #214657; }
 .brief-content a:hover, .workspace-toolbar a:hover { text-decoration: underline; }
+.brief-pdf-link { display: inline-flex; align-items: center; color: var(--muted); text-decoration: none; }
+.brief-pdf-link[aria-disabled="true"] { opacity: .5; cursor: default; }
 .brief-content {
   max-width: none; margin-inline: 0; padding-inline: clamp(18px, 2.25vw, 36px);
   overflow-wrap: anywhere;

@@ -284,9 +284,9 @@ async function refreshSynopsis() {
   }
 }
 
-let currentBriefContent = "";
 let briefRequest = 0;
 let briefHistoryRequest = 0;
+let briefPdfSelection = "";
 let currentAudioEpisode = null;
 
 function withoutClassification(content) {
@@ -303,13 +303,15 @@ async function refreshBrief(briefId) {
   const metaEl = document.getElementById("briefMeta");
   const factBox = document.getElementById("factCheckBox");
   const factText = document.getElementById("factCheckText");
+  const path = briefId && briefId !== "latest"
+    ? `/api/briefs/${briefId}`
+    : `/api/brief/latest?ao=${state.ao}`;
+  if (path !== briefPdfSelection) updateBriefPdfLinks(null);
+  briefPdfSelection = path;
   try {
-    const path = briefId && briefId !== "latest"
-      ? `/api/briefs/${briefId}`
-      : `/api/brief/latest?ao=${state.ao}`;
     const data = await fetchJson(path);
     if (request !== briefRequest) return;
-    currentBriefContent = withoutClassification(data.content);
+    const currentBriefContent = withoutClassification(data.content);
     const rendered = marked.parse(currentBriefContent);
     el.innerHTML = window.DOMPurify
       ? DOMPurify.sanitize(rendered, { USE_PROFILES: { html: true } })
@@ -321,6 +323,7 @@ async function refreshBrief(briefId) {
       return `<a href="#${heading.id}">${escapeHtml(heading.textContent.replace(/^\d+[.)]\s*/, ""))}</a>`;
     }).join("");
     showFreshness(metaEl, data.generated_at, 30);
+    updateBriefPdfLinks(data.id);
     if (data.fact_check_notes) {
       factText.textContent = data.fact_check_notes;
       factBox.classList.remove("hidden");
@@ -329,6 +332,7 @@ async function refreshBrief(briefId) {
     }
   } catch (e) {
     if (request !== briefRequest) return;
+    updateBriefPdfLinks(null);
     el.textContent = "No analyst brief generated yet — the first generation cycle runs shortly after startup.";
     document.getElementById("briefNav").innerHTML = "";
     metaEl.textContent = "Update unavailable";
@@ -749,17 +753,20 @@ function setSourcesCollapsed(collapsed) {
 // ---------------------------------------------------------------------
 // Brief download / print
 // ---------------------------------------------------------------------
+function updateBriefPdfLinks(id) {
+  for (const [button, query] of [["downloadBriefBtn", "?download=true"], ["printBriefBtn", ""]]) {
+    const link = document.getElementById(button);
+    if (Number.isSafeInteger(id) && id > 0) {
+      link.href = `${API_BASE}/api/briefs/${id}/pdf${query}`;
+      link.removeAttribute("aria-disabled");
+    } else {
+      link.removeAttribute("href");
+      link.setAttribute("aria-disabled", "true");
+    }
+  }
+}
+
 function wireBriefControls() {
-  document.getElementById("downloadBriefBtn").addEventListener("click", () => {
-    const blob = new Blob([currentBriefContent || ""], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `sentinel-${AO_META[state.ao].slug}-brief-${new Date().toISOString().slice(0, 10)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-  document.getElementById("printBriefBtn").addEventListener("click", () => window.print());
   document.getElementById("briefHistory").addEventListener("change", (e) => refreshBrief(e.target.value));
 }
 

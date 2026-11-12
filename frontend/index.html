@@ -14,14 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="static/css/dashboard.css?v=20261111-3">
-<link rel="stylesheet" href="static/css/compass-watch.css?v=8">
-<style media="print">
-  body * { visibility: hidden; }
-  #briefContent, #briefContent *, #printLogo, #printLogo * { visibility: visible; }
-  #briefContent { position: absolute; left: 0; top: 90px; width: 100%; color: #000; background: #fff; }
-  #printLogo { display: block !important; position: absolute; top: 0; left: 0; }
-  #printLogo img { height: 60px; width: auto; }
-</style>
+<link rel="stylesheet" href="static/css/compass-watch.css?v=9">
 </head>
 <body>
 
@@ -250,13 +243,12 @@
       <h2 id="briefTitle">AO High North Daily Analyst Brief</h2>
       <div class="brief-controls">
         <select id="briefHistory" class="text-input"><option value="latest">Latest</option></select>
-        <button id="downloadBriefBtn" class="btn-ghost">Download</button>
-        <button id="printBriefBtn" class="btn-ghost">Print / PDF</button>
+        <a id="downloadBriefBtn" class="btn-ghost brief-pdf-link" aria-disabled="true">Download PDF</a>
+        <a id="printBriefBtn" class="btn-ghost brief-pdf-link" target="_blank" rel="noopener" aria-disabled="true">Print PDF</a>
         <button id="readingModeBtn" class="btn-ghost" aria-pressed="false">Reading view</button>
         <span id="briefMeta" class="meta mono"></span>
       </div>
     </div>
-    <div id="printLogo" class="print-only"><img src="static/img/sentinel-wordmark.png" alt="SENTINEL"></div>
     <p class="brief-period-note">Daily assessment · its own publication date and reporting period are shown below.</p>
     <nav id="briefNav" class="brief-nav" aria-label="Brief sections"></nav>
     <div id="briefContent" class="brief-content">Awaiting first brief generation cycle…</div>
@@ -326,7 +318,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
-<script src="static/js/app.js?v=20261111-9"></script>
+<script src="static/js/app.js?v=20261112-1"></script>
 <script src="static/js/reporting-tools.js?v=20261111-2"></script>
 </body>
 </html>
