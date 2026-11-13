@@ -17,7 +17,7 @@ on:
         type: boolean
         default: false
       audio_only:
-        description: Regenerate audio without rebuilding analyst briefs
+        description: Regenerate audio only, preserving today's original reporting window if available
         type: boolean
         default: false
 
@@ -105,4 +105,4 @@ jobs:
       - if: github.event_name == 'workflow_dispatch' && inputs.audio_only != true
         run: python scripts/cloud_job.py morning --force
       - if: github.event_name == 'workflow_dispatch' && inputs.audio_only == true
-        run: python scripts/cloud_job.py audio --force
+        run: python scripts/cloud_job.py audio --force --preserve-window

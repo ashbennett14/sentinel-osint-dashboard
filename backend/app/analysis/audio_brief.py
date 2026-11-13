@@ -41,6 +41,9 @@ RELIABILITY_ORDER = {
 }
 
 PODCAST_KEYS = ("opening", "high-north", "eastern-europe", "balkans", "levant", "closing")
+ACTIVE_CHAPTER_TARGET = 225
+ACTIVE_CHAPTER_MAX = 280
+EPISODE_WORD_MAX = 1250
 PROHIBITED_SPOKEN_LANGUAGE = re.compile(
     r"(?i)\b(?:sources?|collection|corroborat\w*|confidence|severity|sigacts?|"
     r"open[- ]source|distinct events?|dataset)\b"
@@ -50,9 +53,9 @@ PODCAST_SCHEMA = {
     "properties": {key: {"type": "string"} for key in PODCAST_KEYS},
     "required": list(PODCAST_KEYS),
 }
-PODCAST_SYSTEM_PROMPT = """Write a short British current-affairs briefing for the ear, not a written assessment.
+PODCAST_SYSTEM_PROMPT = """Write a British current-affairs podcast for the ear, not a written assessment. Aim for 5–10 minutes on a normal day (roughly 900–1,150 spoken words before music when all four regions have substantial material).
 Lead with what happened: one or two concrete headlines in the opening, then in each regional chapter say what changed, why it matters and what to watch next, only where supported. Begin each regional chapter with a natural mention of the region. Use short, plain spoken sentences. Avoid jargon, generic scene-setting and repeated transitions. Do not read headings, counts, metadata or methodology aloud.
-Give consequential stories more time, usually up to 130 words per region. A quieter chapter can be a single sentence. There is no minimum length. Never pad the copy or lift sentences from written assessments. For an empty region use only its name followed by 'No material change.'
+For a well-covered region aim for 215–275 words. Cover the most consequential developments with enough detail to explain what happened, how it fits the wider situation, what it could change, and a specific near-term outlook or indicator where supported. Use 80–150 words for thinner chapters when the evidence supports it. Do not turn the chapters into headline lists. Never pad the copy or lift sentences from written assessments. For an empty region use only its name followed by 'No material change.'
 Use only supplied facts. Separate confirmed developments, allegations and analysis; retain attribution to relevant officials or institutions when it matters to the claim. Do not name media publishers or discuss sourcing. Do not say the programme name or add a greeting: the producer adds the ident once. End with a brief sign-off. Return only JSON matching the supplied schema."""
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -141,19 +144,20 @@ def _articles_for_period(db: Session, ao: str, start: datetime, end: datetime) -
     )
 
 
-def _latest_synopsis(db: Session, ao: str) -> Synopsis | None:
+def _latest_synopsis(db: Session, ao: str, end: datetime) -> Synopsis | None:
     return (
         db.query(Synopsis)
-        .filter(Synopsis.ao == ao, Synopsis.window == "24h")
+        .filter(Synopsis.ao == ao, Synopsis.window == "24h",
+                Synopsis.generated_at >= end - timedelta(hours=24), Synopsis.generated_at <= end)
         .order_by(Synopsis.generated_at.desc())
         .first()
     )
 
 
-def _latest_brief(db: Session, ao: str) -> Brief | None:
+def _latest_brief(db: Session, ao: str, end: datetime) -> Brief | None:
     return (
         db.query(Brief)
-        .filter(Brief.ao == ao)
+        .filter(Brief.ao == ao, Brief.generated_at >= end - timedelta(hours=48), Brief.generated_at <= end)
         .order_by(Brief.generated_at.desc())
         .first()
     )
@@ -219,8 +223,8 @@ def _chapter_material(db: Session, ao: str, start: datetime, end: datetime) -> t
             "assessment": "",
             "outlook": "",
         }, 0
-    synopsis = _latest_synopsis(db, ao)
-    brief = _latest_brief(db, ao)
+    synopsis = _latest_synopsis(db, ao, end)
+    brief = _latest_brief(db, ao, end)
     material = {
         "ao": ao,
         "title": title,
@@ -242,7 +246,27 @@ def _chapter_material(db: Session, ao: str, start: datetime, end: datetime) -> t
     return material, len(articles)
 
 
-def _fallback_developments(material: dict, source_names: list[str]) -> list[str]:
+def _similar_sentence(left: str, right: str) -> bool:
+    a, b = (set(re.findall(r"[a-z]{4,}", text.lower())) for text in (left, right))
+    return bool(a and b and len(a & b) / min(len(a), len(b)) >= 0.78)
+
+
+def _unique_sentences(text: str, existing: list[str], budget: int) -> list[str]:
+    additions = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        sentence = sentence.strip()
+        if not sentence or re.search(r"(?:…|\.{3})$", sentence):
+            continue
+        if sentence[-1] not in ".!?":
+            sentence = sentence.rstrip(",;:–—-") + "."
+        words = len(sentence.split())
+        if words <= budget and not any(_similar_sentence(sentence, other) for other in existing + additions):
+            additions.append(sentence)
+            budget -= words
+    return additions
+
+
+def _fallback_developments(material: dict, source_names: list[str], *, limit: int = 2) -> list[str]:
     developments = []
     for item in material["developments"]:
         text = _safe_spoken_sentences(item.get("title", ""), source_names, 28)
@@ -254,19 +278,63 @@ def _fallback_developments(material: dict, source_names: list[str]) -> list[str]
             ) else ""
         elif not text:
             text = _safe_spoken_sentences(item.get("summary", ""), source_names, 34)
-        if text:
-            developments.append(text.rstrip(".!?") + ".")
-        if len(developments) >= 2:
+        developments.extend(_unique_sentences(text, developments, 34))
+        if len(developments) >= limit:
             break
-    return developments
+    return developments[:limit]
+
+
+def _regional_context(material: dict, source_names: list[str], field: str) -> str:
+    value = material.get(field, "")
+    if field == "outlook":
+        # Remove bullet labels and prefer the brief's near-term judgement.
+        value = re.split(r"(?i)\b(?:medium term|long term|indicators to watch)\b", value, maxsplit=1)[0]
+        value = re.sub(r"(?i)^\s*short term(?:\s*\([^)]*\))?\s*:\s*", "", value)
+    return _safe_spoken_sentences(value, source_names, 160)
+
+
+def _chapter_context(material: dict, source_names: list[str], existing: list[str], target: int) -> str:
+    remaining = max(0, target - sum(len(s.split()) for s in existing))
+    result = []
+    for field, transition, limit in (
+        ("situation", "Here is the wider picture.", 65),
+        ("assessment", "Why does this matter?", 70),
+        ("outlook", "What happens next?", 55),
+    ):
+        snippets = _unique_sentences(
+            _regional_context(material, source_names, field), existing + result,
+            min(limit, remaining - len(transition.split())),
+        )
+        if snippets:
+            result.extend((transition, *snippets))
+            remaining -= len(transition.split()) + sum(len(s.split()) for s in snippets)
+    # If the synopsis or outlook is thin, prefer concrete details over filler.
+    for item in material["developments"]:
+        summary = _safe_spoken_sentences(item.get("summary", ""), source_names, 70)
+        if material["ao"] == "AO_BALKANS" and re.search(r"(?i)\bUkraine\b", summary) and not re.search(
+            r"(?i)\b(?:Albania|Bosnia|Bulgaria|Croatia|Greece|Kosovo|Montenegro|Macedonia|Serbia|Slovenia|Balkan|Adriatic)\b", summary
+        ):
+            continue
+        snippets = _unique_sentences(summary, existing + result, min(48, remaining))
+        result.extend(snippets)
+        remaining -= sum(len(s.split()) for s in snippets)
+    if remaining > 0:
+        for development in _fallback_developments(material, source_names, limit=4):
+            snippets = _unique_sentences(development, existing + result, remaining)
+            result.extend(snippets)
+            remaining -= sum(len(s.split()) for s in snippets)
+    return " ".join(result)
 
 
 def _fallback_chapter(material: dict, source_names: list[str]) -> str:
     title = material["title"]
     if material["no_material_change"]:
         return f"{title}. No material change."
-    developments = _fallback_developments(material, source_names)
-    return f"{title}. " + (" ".join(developments) or "No further detail for now.")
+    developments = _fallback_developments(material, source_names, limit=4)
+    leads = [f"{title}.", *developments]
+    target = ACTIVE_CHAPTER_MAX if len(material["developments"]) >= 4 else 150
+    context = _chapter_context(material, source_names, leads, target)
+    return " ".join([*leads, context] if context else [*leads, *([] if developments else ["No further detail for now."])])
 
 
 def _fallback_script(materials: dict, source_names: list[str]) -> dict:
@@ -322,7 +390,7 @@ def _podcast_rewrite(materials: dict, source_names: list[str], local_day: str) -
         "date": local_day,
         "instructions": {
             "opening": "One or two concrete headlines, up to 45 words. No greeting, date or programme name.",
-            "active_chapter": "Name the region, lead with one or two developments, explain why they matter, and offer a specific thing to watch if supported. Usually no more than 130 words. Never pad.",
+            "active_chapter": "For four or more distinct developments, aim for 215–275 words. For thinner material, aim for 80–150 when supported. Lead with the news, then explain the wider situation, why it matters and what may happen next. Never pad.",
             "quiet_chapter": "Use only the AO name followed by: No material change.",
             "closing": "One brief natural sign-off.",
         },
@@ -331,7 +399,7 @@ def _podcast_rewrite(materials: dict, source_names: list[str], local_day: str) -
     raw = complete(
         PODCAST_SYSTEM_PROMPT,
         json.dumps(payload, ensure_ascii=False),
-        max_tokens=3000,
+        max_tokens=4400,
         json_schema=PODCAST_SCHEMA,
         thinking_level="low",
     )
@@ -339,8 +407,20 @@ def _podcast_rewrite(materials: dict, source_names: list[str], local_day: str) -
     if isinstance(script, dict):
         for key in PODCAST_KEYS:
             if isinstance(script.get(key), str):
-                limit = 45 if key == "opening" else 20 if key == "closing" else 145
+                limit = 45 if key == "opening" else 20 if key == "closing" else ACTIVE_CHAPTER_MAX
                 script[key] = _safe_spoken_sentences(script[key], source_names, limit)
+    _validate_podcast_copy(script, materials, source_names)
+    for ao in AO_ORDER:
+        key, _ = AO_AUDIO[ao]
+        material = materials[ao]
+        if material["no_material_change"] or not material["developments"]:
+            continue
+        target = ACTIVE_CHAPTER_TARGET if len(material["developments"]) >= 4 else 105
+        existing = re.split(r"(?<=[.!?])\s+", script[key])
+        if len(script[key].split()) < target:
+            extra = _chapter_context(material, source_names, existing, target)
+            if extra:
+                script[key] += f" {extra}"
     _validate_podcast_copy(script, materials, source_names)
     return script
 
@@ -387,6 +467,9 @@ def build_episode_script(
     transcript_parts.append(sections[-1]["text"])
     transcript = "\n\n".join(transcript_parts)
     validate_episode_script(sections, transcript)
+    logger.info("Podcast script: %d spoken words; regional chapter lengths: %s",
+                sum(len(section["text"].split()) for section in sections),
+                {section["key"]: len(section["text"].split()) for section in sections[1:-1]})
     return sections, transcript, period_start, period_end, total_sources
 
 
@@ -400,8 +483,8 @@ def validate_episode_script(sections: list[dict], transcript: str) -> None:
         raise ValueError("Audio briefing contains behind-the-scenes language")
     if any(not (section.get("text") or "").strip() for section in sections):
         raise ValueError("Audio briefing contains an empty chapter")
-    if len((transcript or "").split()) > 700:
-        raise ValueError("Audio briefing exceeds the short-format script ceiling")
+    if sum(len(section["text"].split()) for section in sections) > EPISODE_WORD_MAX:
+        raise ValueError("Audio briefing exceeds the episode script ceiling")
 
 
 def audio_path_for(episode: AudioBrief) -> Path | None:
@@ -488,7 +571,7 @@ def generate_audio_brief(db: Session, period_end: datetime | None = None) -> Aud
     episode.audio_filename = final_name
     episode.mime_type = "audio/mp4"
     episode.duration_seconds = float(metadata["duration_seconds"])
-    episode.word_count = len(transcript.split())
+    episode.word_count = sum(len(section["text"].split()) for section in sections)
     episode.source_article_count = source_count
     episode.voice_engine = metadata.get("engine", "unknown")
     episode.status = "ready"

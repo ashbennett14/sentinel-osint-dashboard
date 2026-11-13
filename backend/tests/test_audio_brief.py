@@ -110,7 +110,7 @@ class AudioBriefTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "publisher"):
             _validate_podcast_copy(script, materials, ["Example News"])
 
-    def test_fallback_leads_with_facts_without_padding_from_written_brief(self):
+    def test_fallback_leads_with_facts_and_adds_supported_context(self):
         material = {
             "ao": "AO_BALKANS", "title": "The Balkans", "no_material_change": False,
             "developments": [{"title": "Officials said a military exercise began in Serbia.", "summary": ""}],
@@ -118,7 +118,11 @@ class AudioBriefTests(unittest.TestCase):
             "assessment": "The activity may place additional pressure on neighbouring authorities.",
             "outlook": "Further movement is possible during the next several days.",
         }
-        self.assertEqual(_fallback_chapter(material, []), "The Balkans. Officials said a military exercise began in Serbia.")
+        chapter = _fallback_chapter(material, [])
+        self.assertTrue(chapter.startswith("The Balkans. Officials said a military exercise began in Serbia."))
+        self.assertIn(material["situation"], chapter)
+        self.assertIn(material["assessment"], chapter)
+        self.assertIn(material["outlook"], chapter)
 
     def test_quiet_episode_keeps_all_regions_and_uses_one_ident(self):
         with patch("app.analysis.audio_brief._articles_for_period", return_value=[]), patch(
@@ -158,6 +162,31 @@ class AudioBriefTests(unittest.TestCase):
         with patch("app.analysis.audio_brief.complete", return_value=__import__("json").dumps(response)):
             script = _podcast_rewrite(materials, [], "Wednesday, 11 November 2026")
         self.assertEqual(script["high-north"], response["high-north"])
+
+    def test_short_rewrite_expands_well_covered_regions_but_never_pads_quiet_regions(self):
+        keys = ("opening", "high-north", "eastern-europe", "balkans", "levant", "closing")
+        response = dict.fromkeys(keys, "A port operator suspended ferry crossings.")
+        response["opening"] = "Here are the headlines this morning."
+        response["closing"] = "Thanks for listening."
+        material = {
+            "ao": "AO_HIGH_NORTH", "title": "High North", "no_material_change": False,
+            "developments": [{"title": "A port operator suspended ferry crossings.",
+                              "summary": "Passengers were transferred to buses at the northern terminal."}] * 4,
+            "situation": "A port operator suspended ferry crossings. The shipping lanes remain open to other vessels.",
+            "assessment": "A diversion could delay the delivery of heavy equipment to coastal communities.",
+            "outlook": "Short term (0-72h): Watch for a decision on whether crossings can resume. Medium term (1-4 weeks): This is beyond the podcast horizon.",
+        }
+        materials = {ao: {"no_material_change": True, "developments": []} for ao in AO_ORDER}
+        materials["AO_HIGH_NORTH"] = material
+        with patch("app.analysis.audio_brief.complete", return_value=__import__("json").dumps(response)):
+            script = _podcast_rewrite(materials, [], "Friday, 13 November 2026")
+        chapter = script["high-north"]
+        self.assertEqual(chapter.count("A port operator suspended ferry crossings."), 1)
+        self.assertEqual(chapter.count("Passengers were transferred"), 1)
+        self.assertIn("heavy equipment", chapter)
+        self.assertIn("whether crossings can resume", chapter)
+        self.assertNotIn("beyond the podcast horizon", chapter)
+        self.assertEqual(script["balkans"], "The Balkans. No material change.")
 
     def test_spoken_developments_do_not_name_sources(self):
         article = SimpleNamespace(

@@ -86,7 +86,7 @@ def run_briefs() -> None:
         db.close()
 
 
-def run_audio(force: bool) -> None:
+def run_audio(force: bool, preserve_window: bool = False) -> None:
     local_now = datetime.now(ZoneInfo(settings.AUDIO_BRIEF_TIMEZONE))
     episode_date = local_now.date().isoformat()
     db = SessionLocal()
@@ -97,7 +97,8 @@ def run_audio(force: bool) -> None:
         if existing and not force:
             logger.info("Audio episode %s already exists", episode_date)
             return
-        episode = generate_audio_brief(db)
+        period_end = existing.period_end if preserve_window and existing else None
+        episode = generate_audio_brief(db, period_end=period_end)
         _record_status(db, "audio", True)
         logger.info("Generated episode %s (%.1fs)", episode.episode_date, episode.duration_seconds or 0)
     except Exception as exc:
@@ -221,6 +222,7 @@ def main() -> int:
     parser.add_argument("--only-if-stale", action="store_true")
     parser.add_argument("--partial", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--preserve-window", action="store_true")
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--shard-count", type=int, default=1)
     args = parser.parse_args()
@@ -244,7 +246,7 @@ def main() -> int:
     elif args.job == "brief":
         run_database_job("brief", run_briefs)
     elif args.job == "audio":
-        run_database_job("audio", lambda: run_audio(args.force))
+        run_database_job("audio", lambda: run_audio(args.force, preserve_window=args.preserve_window))
     elif args.job == "morning" and scheduled_morning_is_due(args.force):
         run_database_job("brief", run_briefs)
         run_database_job("audio", lambda: run_audio(args.force))
