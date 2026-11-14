@@ -29,7 +29,7 @@ from app.scheduler import (
     run_ingest_cycle,
 )
 from app.analysis.audio_brief import audio_path_for
-from app.storage import public_audio_url
+from app.storage import R2_PREFIX, audio_location_available, public_audio_url
 from app.reporting import clean_text, may_need_translation, publisher_name, source_destination
 
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -347,7 +347,7 @@ def _audio_brief_out(episode: AudioBrief) -> AudioBriefOut:
         chapters=chapters,
         audio_url=(
             f"/api/audio-briefs/{episode.id}/file"
-            if public_audio_url(episode.audio_filename or "") or audio_path_for(episode)
+            if audio_location_available(episode.audio_filename or "") or audio_path_for(episode)
             else None
         ),
         mime_type=episode.mime_type,
@@ -400,9 +400,10 @@ def get_audio_brief_file(
 ):
     episode = db.query(AudioBrief).filter(AudioBrief.id == episode_id).first()
     if episode and episode.status == "ready":
-        cloud_url = public_audio_url(episode.audio_filename or "")
+        key = episode.audio_filename or ""
+        cloud_url = public_audio_url(key, download=True) if download else public_audio_url(key)
         if cloud_url:
-            if download:
+            if download and not key.startswith(R2_PREFIX):
                 separator = "&" if "?" in cloud_url else "?"
                 cloud_url = f"{cloud_url}{separator}download=sentinel-morning-{episode.episode_date}.m4a"
             return RedirectResponse(cloud_url, status_code=307, headers={"Cache-Control": "no-store"})

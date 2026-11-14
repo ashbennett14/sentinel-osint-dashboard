@@ -131,6 +131,31 @@ What's new:
 - **Error visibility** — if synopsis or brief generation starts failing (bad API key, rate limit, etc.), a red banner appears at the top of the dashboard rather than the panel silently going stale.
 - **Expanded starter sources & gazetteer** — more RSS feeds and Telegram channels across both AOs, plus more granular locations (specific bases, named operations, more towns) in `ingest/geotag.py`.
 
+## Podcast transfer and optional R2 storage
+
+The dashboard fetches episode details and transcripts separately from the audio.
+Playback, chapter selection and Download request the media only when clicked.
+New episodes use 80 kbps AAC without changing their length or chapter times.
+Idle background tabs stop polling and open dashboards poll every five minutes.
+
+To move future audio off Supabase, activate Cloudflare R2 and create a private
+Standard bucket. In GitHub Actions set repository variables
+`R2_AUDIO_ENDPOINT` (the HTTPS S3 endpoint) and `R2_AUDIO_BUCKET` (the bucket
+name), plus secrets `R2_AUDIO_ACCESS_KEY_ID` and
+`R2_AUDIO_SECRET_ACCESS_KEY` for a bucket-scoped read/write credential. Set
+the same four names in Vercel production, but use a separate bucket-scoped
+read-only credential there. Configure Vercel and redeploy before enabling the
+GitHub variables. Never paste the credentials into chat or commit them.
+
+New episodes go to R2 once configured; old ones keep their original Supabase
+links until expiry. No public bucket or custom domain is needed. The backend
+issues temporary read links. Separate playback and download objects preserve
+browser download behaviour; retention deletes both. An optional bucket
+lifecycle expiry after 35 days can catch orphaned copies. Verify a cloud
+episode, playback with byte ranges, and the Download action before relying on
+the new path. Egress is free on R2, but usage beyond the included request
+and storage allowances can be billed.
+
 ## Combined Daily Intelligence Report
 
 Published combined editions are dated PDFs under `frontend/reports/`, linked

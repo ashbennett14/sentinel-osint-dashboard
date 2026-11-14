@@ -21,7 +21,7 @@ from app.analysis.llm_client import complete
 from app.analysis.synopsis import _extract_json
 from app.config import settings
 from app.models import Article, AudioBrief, Brief, Source, Synopsis
-from app.storage import cloud_storage_enabled, delete_audio, upload_audio
+from app.storage import R2_PREFIX, cloud_storage_enabled, delete_audio, new_audio_key, upload_audio
 
 logger = logging.getLogger("sentinel.analysis.audio")
 
@@ -503,8 +503,13 @@ def _cleanup_old_episodes(db: Session) -> None:
         path = audio_path_for(episode)
         if path:
             path.unlink(missing_ok=True)
-        elif episode.audio_filename and cloud_storage_enabled():
-            delete_audio(episode.audio_filename)
+        elif episode.audio_filename and (cloud_storage_enabled(episode.audio_filename)
+                                         or episode.audio_filename.startswith(R2_PREFIX)):
+            try:
+                delete_audio(episode.audio_filename)
+            except Exception:
+                logger.warning("Audio retention deferred for %s", episode.episode_date, exc_info=True)
+                continue
         db.delete(episode)
     if expired:
         db.commit()
@@ -521,7 +526,7 @@ def generate_audio_brief(db: Session, period_end: datetime | None = None) -> Aud
 
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     revision = datetime.utcnow().strftime("%H%M%S")
-    final_name = f"sentinel-morning-{episode_date}-{revision}.m4a"
+    final_name = new_audio_key(f"sentinel-morning-{episode_date}-{revision}.m4a")
     final_path = AUDIO_DIR / final_name
 
     with tempfile.TemporaryDirectory(prefix="episode-", dir=AUDIO_DIR) as temp_dir:
@@ -558,9 +563,14 @@ def generate_audio_brief(db: Session, period_end: datetime | None = None) -> Aud
 
     existing = db.query(AudioBrief).filter(AudioBrief.episode_date == episode_date).first()
     old_path = audio_path_for(existing) if existing else None
-    old_object_key = existing.audio_filename if existing and cloud_storage_enabled() else None
-    if cloud_storage_enabled():
-        upload_audio(final_path, final_name)
+    old_object_key = existing.audio_filename if existing and existing.audio_filename and cloud_storage_enabled(existing.audio_filename) else None
+    cloud_upload = cloud_storage_enabled(final_name)
+    if cloud_upload:
+        try:
+            upload_audio(final_path, final_name)
+        except Exception:
+            final_path.unlink(missing_ok=True)
+            raise
     episode = existing or AudioBrief(episode_date=episode_date)
     episode.generated_at = datetime.utcnow()
     episode.period_start = period_start
@@ -582,7 +592,7 @@ def generate_audio_brief(db: Session, period_end: datetime | None = None) -> Aud
         db.commit()
         db.refresh(episode)
     except Exception:
-        if cloud_storage_enabled():
+        if cloud_upload:
             try:
                 delete_audio(final_name)
             except Exception:  # noqa: BLE001
@@ -597,7 +607,7 @@ def generate_audio_brief(db: Session, period_end: datetime | None = None) -> Aud
             delete_audio(old_object_key)
         except Exception:  # noqa: BLE001
             logger.exception("Could not remove replaced audio object %s", old_object_key)
-    if cloud_storage_enabled():
+    if cloud_upload:
         final_path.unlink(missing_ok=True)
     _cleanup_old_episodes(db)
     return episode

@@ -58,3 +58,34 @@ def test_upload_error_includes_supabase_response(monkeypatch, tmp_path: Path):
 
     with pytest.raises(requests.HTTPError, match="invalid upload"):
         storage.upload_audio(audio, "episode.m4a")
+
+
+def test_r2_routes_by_key_and_preserves_legacy_archive(monkeypatch, tmp_path: Path):
+    audio = tmp_path / "episode.m4a"
+    audio.write_bytes(b"audio")
+    filename = "sentinel-morning-2026-11-14-070000.m4a"
+    client = Mock()
+    client.generate_presigned_url.return_value = "https://example.test/signed"
+    monkeypatch.setattr(storage.settings, "R2_AUDIO_ENDPOINT", "https://" + "a" * 32 + ".r2.cloudflarestorage.com")
+    monkeypatch.setattr(storage.settings, "R2_AUDIO_BUCKET", "sentinel-audio")
+    monkeypatch.setattr(storage.settings, "R2_AUDIO_ACCESS_KEY_ID", "key")
+    monkeypatch.setattr(storage.settings, "R2_AUDIO_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setattr(storage.settings, "SUPABASE_URL", "https://legacy.supabase.co")
+    monkeypatch.setattr(storage, "_r2_client", lambda: client)
+
+    key = storage.new_audio_key(filename)
+    storage.upload_audio(audio, key)
+    calls = [call.kwargs for call in client.put_object.call_args_list]
+    assert [call["Key"] for call in calls] == [f"episodes/{filename}", f"downloads/{filename}"]
+    assert calls[0]["ContentDisposition"] == "inline"
+    assert calls[1]["ContentDisposition"].startswith("attachment;")
+    assert storage.public_audio_url(key, download=True) == "https://example.test/signed"
+    assert client.generate_presigned_url.call_args.kwargs["Params"]["Key"] == f"downloads/{filename}"
+    assert "legacy.supabase.co" in storage.public_audio_url(filename)
+    storage.delete_audio(key)
+    assert len(client.delete_object.call_args_list) == 2
+    monkeypatch.setattr(storage.settings, "R2_AUDIO_SECRET_ACCESS_KEY", "")
+    assert not storage.audio_location_available(key)
+    assert storage.public_audio_url(key) is None
+    with pytest.raises(RuntimeError, match="not ready"):
+        storage.new_audio_key(filename)

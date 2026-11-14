@@ -39,6 +39,10 @@ class Settings:
     SUPABASE_S3_REGION: str = os.getenv("SUPABASE_S3_REGION", "eu-west-1")
     SUPABASE_S3_ACCESS_KEY_ID: str = os.getenv("SUPABASE_S3_ACCESS_KEY_ID", "")
     SUPABASE_S3_SECRET_ACCESS_KEY: str = os.getenv("SUPABASE_S3_SECRET_ACCESS_KEY", "")
+    R2_AUDIO_ENDPOINT: str = os.getenv("R2_AUDIO_ENDPOINT", "").rstrip("/")
+    R2_AUDIO_BUCKET: str = os.getenv("R2_AUDIO_BUCKET", "")
+    R2_AUDIO_ACCESS_KEY_ID: str = os.getenv("R2_AUDIO_ACCESS_KEY_ID", "")
+    R2_AUDIO_SECRET_ACCESS_KEY: str = os.getenv("R2_AUDIO_SECRET_ACCESS_KEY", "")
     INGEST_INTERVAL_MINUTES: int = int(os.getenv("INGEST_INTERVAL_MINUTES", "15"))
     # Call budget per day on a free Gemini key:
     #   Synopsis: 3 calls/cycle (1 per AO). At 60min default = 72 calls/day.

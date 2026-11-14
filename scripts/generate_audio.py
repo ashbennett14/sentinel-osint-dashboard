@@ -268,10 +268,10 @@ def main() -> int:
         else:
             chapters, duration = mix_episode(rendered, combined)
         converter = [
-            "/usr/bin/afconvert", str(combined), "-o", str(output), "-f", "m4af", "-d", "aac", "-b", "128000"
+            "/usr/bin/afconvert", str(combined), "-o", str(output), "-f", "m4af", "-d", "aac", "-b", "80000"
         ] if Path("/usr/bin/afconvert").is_file() else [
             shutil.which("ffmpeg") or "ffmpeg", "-y", "-i", str(combined),
-            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output),
+            "-c:a", "aac", "-b:a", "80k", "-movflags", "+faststart", str(output),
         ]
         subprocess.run(
             converter,

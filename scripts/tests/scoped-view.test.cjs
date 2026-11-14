@@ -4,6 +4,44 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
+test("episode metadata does not load audio; a chapter click requests the edition", async () => {
+  const elements = new Map();
+  const player = {
+    paused: true, readyState: 0, loads: 0, plays: 0,
+    hasAttribute(name) { return Boolean(this[name]); },
+    removeAttribute(name) { delete this[name]; },
+    load() { this.loads++; },
+    play() { this.plays++; return Promise.resolve(); },
+  };
+  const el = id => {
+    if (id === "audioPlayer") return player;
+    if (!elements.has(id)) elements.set(id, {
+      dataset:{}, classList:{add() {}, toggle() {}}, querySelectorAll:() => [],
+    });
+    return elements.get(id);
+  };
+  const episode = {id:90, generated_at:"2026-11-14T07:00:00", episode_date:"2026-11-14",
+    audio_url:"/api/audio-briefs/90/file", duration_seconds:420, chapters:[]};
+  const sandbox = vm.createContext({
+    document:{getElementById:el, querySelectorAll:() => [], addEventListener() {}},
+    location:{protocol:"https:", hostname:"example.test", origin:"https://example.test"},
+    fetch:async () => ({ok:true, json:async () => ({...episode})}),
+    reportingDate:Date.parse, URL,
+  });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../../frontend/static/js/app.js"), "utf8"), sandbox);
+  await vm.runInContext('refreshAudioBrief("latest")', sandbox);
+  assert.equal(player.src, undefined);
+  assert.equal(player.loads, 0);
+  assert.equal(el("audioPlayBtn").disabled, false);
+  assert.equal(el("audioDuration").textContent, "7:00");
+  vm.runInContext("playAudioBrief(90)", sandbox);
+  assert.equal(player.plays, 1);
+  assert.equal(new URL(player.src).pathname, episode.audio_url);
+  assert.equal(vm.runInContext("pendingAudioSeek", sandbox), 90);
+  await vm.runInContext('refreshAudioBrief("latest")', sandbox);
+  assert.equal(player.loads, 0);
+});
+
 test("switching region clears the previous view and ignores late synopsis responses", async () => {
   const elements = new Map();
   const el = id => {

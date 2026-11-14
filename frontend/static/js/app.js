@@ -525,6 +525,33 @@ function formatAudioTime(seconds) {
 
 const ukDay = new Intl.DateTimeFormat("en-CA", {timeZone:"Europe/London", year:"numeric", month:"2-digit", day:"2-digit"});
 let audioRequest = 0;
+let pendingAudioSeek = null;
+
+function audioPlaybackStatus(message = "") {
+  const status = document.getElementById("audioPlaybackStatus");
+  status.textContent = message;
+  status.hidden = !message;
+}
+
+function playAudioBrief(start = null) {
+  if (!currentAudioEpisode?.audio_url) return;
+  const player = document.getElementById("audioPlayer");
+  audioPlaybackStatus();
+  pendingAudioSeek = start;
+  if (!player.hasAttribute("src") || player.error) {
+    const retry = Boolean(player.error);
+    const url = new URL(currentAudioEpisode.audio_url, API_BASE || location.origin);
+    url.searchParams.set("edition", currentAudioEpisode.generated_at);
+    player.src = url.href;
+    if (retry) player.load();
+  } else if (start !== null && player.readyState >= 1) {
+    player.currentTime = start;
+    pendingAudioSeek = null;
+  }
+  player.play().catch(error => {
+    if (error.name !== "AbortError" && !player.error) audioPlaybackStatus("Audio could not play. Try pressing Play again.");
+  });
+}
 
 async function refreshAudioBrief(episodeId) {
   const request = ++audioRequest;
@@ -541,8 +568,13 @@ async function refreshAudioBrief(episodeId) {
       : "/api/audio-brief/latest";
     const data = await fetchJson(path);
     if (request !== audioRequest) return;
-    const previousId = currentAudioEpisode && currentAudioEpisode.id;
-    const previousAudioUrl = currentAudioEpisode && currentAudioEpisode.audio_url;
+    const changed = currentAudioEpisode?.id !== data.id ||
+      currentAudioEpisode?.generated_at !== data.generated_at ||
+      currentAudioEpisode?.audio_url !== data.audio_url;
+    // Do not interrupt a listener if a newer edition arrives in the background.
+    if (changed && !player.paused && (!episodeId || episodeId === "latest") &&
+        currentAudioEpisode?.id && data.episode_date >= currentAudioEpisode.episode_date &&
+        document.getElementById("audioBriefHistory").dataset.switching !== "true") return;
     currentAudioEpisode = data;
     title.textContent = data.title;
     const latest = !episodeId || episodeId === "latest";
@@ -553,10 +585,15 @@ async function refreshAudioBrief(episodeId) {
     period.textContent = `Reporting period: ${formatUkTime(data.period_start)} to ${formatUkTime(data.period_end)} · All four regions`;
     transcript.textContent = data.transcript || "No transcript is available.";
     download.disabled = !data.audio_url;
-    if (data.audio_url && (previousId !== data.id || previousAudioUrl !== data.audio_url || !player.src)) {
-      player.src = `${API_BASE}${data.audio_url}`;
+    if (changed && player.hasAttribute("src")) {
+      pendingAudioSeek = null;
+      player.removeAttribute("src");
       player.load();
     }
+    if (changed) audioPlaybackStatus();
+    document.getElementById("audioPlayBtn").disabled = !data.audio_url;
+    if (!player.hasAttribute("src")) document.getElementById("audioDuration").textContent = formatAudioTime(data.duration_seconds);
+    if (!changed) return;
     const aoChapters = (data.chapters || []).filter((chapter) =>
       ["high-north", "eastern-europe", "balkans", "levant"].includes(chapter.key)
     );
@@ -567,13 +604,13 @@ async function refreshAudioBrief(episodeId) {
     `).join("");
     chapters.querySelectorAll(".chapter-btn").forEach((button) => {
       button.addEventListener("click", () => {
-        player.currentTime = Number(button.dataset.start) || 0;
-        player.play().catch(() => {});
+        playAudioBrief(Number(button.dataset.start) || 0);
       });
     });
     updateAudioChapter();
   } catch (e) {
     if (request !== audioRequest) return;
+    if (currentAudioEpisode && !player.paused) return;
     currentAudioEpisode = null;
     title.textContent = "Episode unavailable";
     meta.textContent = e.status === 404 ? "No episode published for this selection" : "Could not check the episode. The dashboard will retry.";
@@ -582,8 +619,12 @@ async function refreshAudioBrief(episodeId) {
     transcript.textContent = "No transcript is available yet.";
     chapters.innerHTML = "";
     download.disabled = true;
-    player.removeAttribute("src");
-    player.load();
+    document.getElementById("audioPlayBtn").disabled = true;
+    pendingAudioSeek = null;
+    if (player.hasAttribute("src")) {
+      player.removeAttribute("src");
+      player.load();
+    }
   }
 }
 
@@ -611,19 +652,22 @@ function wireAudioControls() {
   const elapsed = document.getElementById("audioElapsed");
   const duration = document.getElementById("audioDuration");
   const syncTransport = () => {
-    const total = Number.isFinite(player.duration) ? player.duration : 0;
+    const total = Number.isFinite(player.duration) ? player.duration : Number(currentAudioEpisode?.duration_seconds) || 0;
     seek.max = String(total || 1);
     seek.value = String(player.currentTime);
-    seek.disabled = !total || !!player.error;
+    seek.disabled = !total || player.readyState < 1 || !!player.error;
     seek.setAttribute("aria-valuetext", `${formatAudioTime(player.currentTime)} of ${formatAudioTime(total)}`);
     elapsed.textContent = formatAudioTime(player.currentTime);
     duration.textContent = formatAudioTime(total);
-    playButton.disabled = !player.currentSrc || !!player.error;
+    playButton.disabled = !currentAudioEpisode?.audio_url;
     playButton.setAttribute("aria-label", player.paused ? "Play briefing" : "Pause briefing");
     playButton.firstElementChild.textContent = player.paused ? "▶" : "Ⅱ";
     mute.setAttribute("aria-pressed", String(player.muted));
   };
   ["loadstart", "durationchange", "emptied", "error", "play", "pause", "ended", "timeupdate", "volumechange"].forEach(event => player.addEventListener(event, syncTransport));
+  player.addEventListener("error", () => {
+    if (player.hasAttribute("src")) audioPlaybackStatus("The audio file is temporarily unavailable. You can still read the transcript.");
+  });
   seek.addEventListener("input", () => {
     if (Number.isFinite(player.duration)) player.currentTime = Number(seek.value);
   });
@@ -633,17 +677,18 @@ function wireAudioControls() {
   const remember = (key, value) => { try { localStorage.setItem(key, value); } catch (_) {} };
   const recall = (key) => { try { return localStorage.getItem(key); } catch (_) { return null; } };
   playButton.addEventListener("click", () => {
-    if (!player.src) return;
-    if (player.paused) player.play().catch(() => {}); else player.pause();
+    if (player.paused) playAudioBrief(); else player.pause();
   });
   player.addEventListener("loadedmetadata", () => {
-    const saved = Number(recall(`sentinel-audio-${currentAudioEpisode?.id}`));
-    if (saved > 0 && saved < player.duration - 5) player.currentTime = saved;
+    const saved = Number(recall(`sentinel-audio-${currentAudioEpisode?.id}-${currentAudioEpisode?.generated_at}`));
+    const start = pendingAudioSeek ?? (saved > 0 && saved < player.duration - 5 ? saved : 0);
+    pendingAudioSeek = null;
+    if (start > 0 && start < player.duration) player.currentTime = start;
     player.playbackRate = Number(document.getElementById("audioSpeed").value);
   });
   player.addEventListener("timeupdate", () => {
     updateAudioChapter();
-    if (currentAudioEpisode) remember(`sentinel-audio-${currentAudioEpisode.id}`, String(player.currentTime));
+    if (currentAudioEpisode && player.readyState >= 1) remember(`sentinel-audio-${currentAudioEpisode.id}-${currentAudioEpisode.generated_at}`, String(player.currentTime));
   });
   document.getElementById("audioSpeed").value = recall("sentinel-speed") || "1";
   document.getElementById("audioSpeed").addEventListener("change", (event) => {
@@ -653,11 +698,17 @@ function wireAudioControls() {
   const history = document.getElementById("audioBriefHistory");
   const generate = document.getElementById("generateAudioBtn");
   const download = document.getElementById("downloadAudioBtn");
-  history.addEventListener("change", () => refreshAudioBrief(history.value));
+  history.addEventListener("change", async () => {
+    history.dataset.switching = "true";
+    try { await refreshAudioBrief(history.value); }
+    finally { delete history.dataset.switching; }
+  });
   download.addEventListener("click", () => {
     if (!currentAudioEpisode || !currentAudioEpisode.audio_url) return;
     const anchor = document.createElement("a");
-    anchor.href = `${API_BASE}${currentAudioEpisode.audio_url}?download=true`;
+    const url = new URL(currentAudioEpisode.audio_url, API_BASE || location.origin);
+    url.searchParams.set("download", "true");
+    anchor.href = url.href;
     anchor.download = `sentinel-morning-${currentAudioEpisode.episode_date}.m4a`;
     anchor.click();
   });
@@ -1198,7 +1249,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateAoHeader();
   resetFilteredReporting();
   refreshAll();
-  setInterval(refreshAll, 60000); // poll every minute
+  setInterval(() => { if (!document.hidden) refreshAll(); }, 5 * 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAll(); });
 });
 
 function showFreshness(element, value, hours) {
