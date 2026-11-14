@@ -134,6 +134,17 @@ class AudioBriefTests(unittest.TestCase):
         self.assertEqual(transcript.count("No material change."), 4)
         self.assertEqual(sections[3]["text"], "The Balkans. No material change.")
 
+    def test_hosted_audio_does_not_call_an_outage_a_quiet_day(self):
+        end = datetime(2026, 11, 14, 6)
+        engine = create_engine("sqlite://")
+        Base.metadata.create_all(engine)
+        with sessionmaker(bind=engine)() as db, patch(
+            "app.analysis.audio_brief.settings.HOSTED_MODE", True
+        ), patch("app.analysis.audio_brief.complete") as model:
+            with self.assertRaisesRegex(RuntimeError, "collection is stale"):
+                build_episode_script(db, end)
+            model.assert_not_called()
+
     def test_podcast_rewrite_uses_one_model_call(self):
         keys = ("opening", "high-north", "eastern-europe", "balkans", "levant", "closing")
         response = {key: "A calm natural update for the listener." for key in keys}

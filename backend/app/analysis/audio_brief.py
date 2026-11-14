@@ -20,7 +20,7 @@ from app.analysis.brief import AO_CONFIG, EVENT_LABELS, NON_LATIN_SCRIPT
 from app.analysis.llm_client import complete
 from app.analysis.synopsis import _extract_json
 from app.config import settings
-from app.models import Article, AudioBrief, Brief, Source, Synopsis
+from app.models import Article, AudioBrief, Brief, Source, Synopsis, SystemStatus
 from app.storage import R2_PREFIX, cloud_storage_enabled, delete_audio, new_audio_key, upload_audio
 
 logger = logging.getLogger("sentinel.analysis.audio")
@@ -448,6 +448,11 @@ def build_episode_script(
     for ao in AO_ORDER:
         materials[ao], count = _chapter_material(db, ao, period_start, period_end)
         total_sources += count
+    if not total_sources and settings.HOSTED_MODE:
+        ingest = db.query(SystemStatus).filter_by(component="ingest").first()
+        if (not ingest or not ingest.last_success_at or ingest.last_error
+                or ingest.last_success_at < period_end - timedelta(minutes=75)):
+            raise RuntimeError("No recent articles and collection is stale; cannot distinguish an outage from a quiet day.")
     try:
         script = _podcast_rewrite(materials, source_names, local_day)
     except Exception as exc:  # noqa: BLE001
