@@ -59,7 +59,7 @@ def _headline(article: Article) -> str:
     return _normalize(title[:-len(suffix)] if suffix and title.endswith(suffix) else title)
 
 
-def assign_cluster(db: Session, article: Article):
+def assign_cluster(db: Session, article: Article, candidates=None, headlines=None):
     """Call after classify() has set ao/category/published_at on `article`."""
     if not article.ao or not article.is_sigact:
         return  # background noise isn't clustered
@@ -67,23 +67,33 @@ def assign_cluster(db: Session, article: Article):
     since = article.published_at - timedelta(hours=CLUSTER_WINDOW_HOURS)
     until = article.published_at + timedelta(hours=CLUSTER_WINDOW_HOURS)
 
-    candidates = (
-        db.query(Article)
-        .filter(
-            Article.ao == article.ao,
-            Article.category == article.category,
-            Article.published_at >= since,
-            Article.published_at <= until,
-            Article.cluster_key.isnot(None),
-            Article.id != article.id,
+    if candidates is None:
+        candidates = (
+            db.query(Article)
+            .filter(
+                Article.ao == article.ao,
+                Article.category == article.category,
+                Article.published_at >= since,
+                Article.published_at <= until,
+                Article.cluster_key.isnot(None),
+                Article.id != article.id,
+            )
+            .all()
         )
-        .all()
-    )
 
-    norm_new = _headline(article)
+    def normalized(item):
+        if headlines is None:
+            return _headline(item)
+        if item.id not in headlines:
+            headlines[item.id] = _headline(item)
+        return headlines[item.id]
+
+    norm_new = normalized(article)
     best_match, best_ratio = None, 0.0
     for cand in candidates:
-        candidate = _headline(cand)
+        if cand.id == article.id or not cand.cluster_key or not since <= cand.published_at <= until:
+            continue
+        candidate = normalized(cand)
         if not norm_new or not candidate:
             continue
         ratio = SequenceMatcher(None, norm_new, candidate).ratio()

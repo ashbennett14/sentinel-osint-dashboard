@@ -20,6 +20,10 @@ on:
         description: Regenerate audio only, preserving today's original reporting window if available
         type: boolean
         default: false
+      fresh_window:
+        description: Use the latest 24 hours when recovering after delayed collection
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -108,5 +112,7 @@ jobs:
         run: python scripts/cloud_job.py morning
       - if: github.event_name == 'workflow_dispatch' && inputs.audio_only != true
         run: python scripts/cloud_job.py morning --force
-      - if: github.event_name == 'workflow_dispatch' && inputs.audio_only == true
+      - if: github.event_name == 'workflow_dispatch' && inputs.audio_only == true && inputs.fresh_window != true
         run: python scripts/cloud_job.py audio --force --preserve-window
+      - if: github.event_name == 'workflow_dispatch' && inputs.audio_only == true && inputs.fresh_window == true
+        run: python scripts/cloud_job.py audio --force

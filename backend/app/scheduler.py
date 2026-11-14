@@ -1,10 +1,12 @@
 import logging
 import threading
+from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
 
 from app.config import settings
 from app.database import SessionLocal
@@ -14,7 +16,7 @@ from app.ingest.rss_ingest import fetch_rss_source
 from app.ingest.telegram_ingest import fetch_telegram_source
 from app.ingest.twitter_ingest import fetch_twitter_source, twitter_enabled
 from app.ingest.geotag import CLASSIFIER_VERSION, classify
-from app.ingest.dedup import assign_cluster
+from app.ingest.dedup import CLUSTER_WINDOW_HOURS, assign_cluster
 from app.ingest.notify import send_alert_email, alerts_enabled, ALERT_SEVERITY_THRESHOLD
 from app.analysis.synopsis import generate_all_synopses
 from app.analysis.brief import generate_brief
@@ -137,26 +139,48 @@ def run_ingest_cycle():
         _job_locks["ingest"].release()
 
 
-def run_classification_pass(strict=False):
+def run_classification_pass(strict=False, batch_size=150):
+    """Commit bounded batches so interruptions cannot roll back the whole backlog."""
     db = SessionLocal()
     try:
-        unprocessed = db.query(Article).filter(or_(
-            Article.processed == False,  # noqa: E712
+        pending = or_(
+            Article.processed.is_not(True),
             Article.classifier_version.is_(None),
             Article.classifier_version < CLASSIFIER_VERSION,
-        )).order_by(Article.published_at.asc()).all()
-
-        # Remove stale clusters before rebuilding them with the new rules.
-        for article in unprocessed:
-            article.cluster_key = None
-            article.is_cluster_primary = False
-        db.flush()
-
-        for article in unprocessed:
-            try:
-                with db.begin_nested():
+        )
+        recent = datetime.utcnow() - timedelta(hours=48)
+        delta = timedelta(hours=CLUSTER_WINDOW_HOURS)
+        total = 0
+        failed_ids = set()
+        # Restore the dashboard and morning products before tackling older articles.
+        for scope in (Article.published_at >= recent, Article.published_at < recent):
+            while True:
+                query = db.query(Article).filter(pending, scope).options(joinedload(Article.source))
+                if failed_ids:
+                    query = query.filter(Article.id.notin_(failed_ids))
+                batch = query.order_by(Article.published_at, Article.id).limit(batch_size).all()
+                if not batch:
+                    break
+                candidates = defaultdict(list)
+                for item in db.query(Article).filter(
+                    ~pending, Article.cluster_key.is_not(None),
+                    Article.published_at >= batch[0].published_at - delta,
+                    Article.published_at <= batch[-1].published_at + delta,
+                ).options(joinedload(Article.source)).order_by(Article.published_at, Article.id):
+                    candidates[(item.ao, item.category)].append(item)
+                alerts = []
+                headlines = {}
+                saved = 0
+                for article in batch:
                     source_ao_hint = article.source.ao if article.source else None
-                    result = classify(article.title, article.summary or "", source_ao_hint)
+                    try:
+                        result = classify(article.title, article.summary or "", source_ao_hint)
+                    except Exception as exc:
+                        failed_ids.add(article.id)
+                        logger.warning("Classification error for article %s: %s", article.id, exc)
+                        continue
+                    article.cluster_key = None
+                    article.is_cluster_primary = False
                     article.ao = result.ao
                     article.lat = result.lat
                     article.lon = result.lon
@@ -167,8 +191,10 @@ def run_classification_pass(strict=False):
                     article.processed = True
                     article.classifier_version = CLASSIFIER_VERSION
 
-                    assign_cluster(db, article)
-                    db.flush()
+                    group = candidates[(article.ao, article.category)]
+                    assign_cluster(db, article, group, headlines)
+                    if article.cluster_key:
+                        group.append(article)
 
                     if (
                         article.is_sigact
@@ -177,13 +203,19 @@ def run_classification_pass(strict=False):
                         and not article.alerted
                         and alerts_enabled()
                     ):
-                        if send_alert_email(article):
-                            article.alerted = True
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Classification error for article %s: %s", article.id, exc)
-
-        db.commit()
-        logger.info("Classification pass complete: %d articles processed", len(unprocessed))
+                        alerts.append(article)
+                    saved += 1
+                db.commit()
+                total += saved
+                logger.info("Classification checkpoint: %d articles saved", total)
+                for article in alerts:
+                    if send_alert_email(article):
+                        article.alerted = True
+                if alerts:
+                    db.commit()
+        if strict and failed_ids:
+            raise RuntimeError(f"Classification could not process {len(failed_ids)} articles")
+        logger.info("Classification pass complete: %d articles processed", total)
     except Exception as exc:  # noqa: BLE001
         logger.error("Classification pass failed: %s", exc)
         if strict:
